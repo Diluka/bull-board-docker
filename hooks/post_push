@@ -1,0 +1,4 @@
+#!/bin/bash
+
+docker manifest create $IMAGE_NAME \
+	-a $IMAGE_NAME-arm64

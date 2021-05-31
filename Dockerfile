@@ -2,8 +2,8 @@ FROM node:14.17-alpine
 
 WORKDIR /usr/app
 
-COPY ./package.json .
-COPY ./yarn.lock .
+ADD ./package.json .
+ADD ./package-lock.json .
 
 ENV NODE_ENV production
 ENV REDIS_HOST localhost
@@ -16,13 +16,12 @@ ENV USER_LOGIN ''
 ENV USER_PASSWORD ''
 ENV REDIS_DB 0
 ENV PROXY_PATH ''
+ENV PORT 3000
 
-RUN yarn install
+RUN npm ci
 
-COPY . .
+ADD . .
 
-ARG PORT=3000
-ENV PORT $PORT
 EXPOSE $PORT
 
-CMD ["node", "src/index.js"]
+CMD ["npm", "start"]
