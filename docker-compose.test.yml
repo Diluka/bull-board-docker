@@ -6,7 +6,6 @@ services:
   redis:
     image: redis
   bull-board:
-    image: $IMAGE_NAME
     build: .
     environment:
       REDIS_HOST: redis

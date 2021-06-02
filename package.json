@@ -1,16 +1,22 @@
 {
-  "name": "bullboard",
+  "name": "bull-board-docker",
   "version": "2.0.3",
   "main": "src/index.js",
   "license": "MIT",
+  "private": true,
   "scripts": {
-    "start": "node ."
+    "start": "node .",
+    "pretest": "npm run stack:up",
+    "test": "docker-compose -f docker-compose.test.yml run --rm sut",
+    "stack:up": "docker-compose -f docker-compose.test.yml up -d --build"
   },
+  "repository": "https://github.com/Diluka/bull-board-docker",
   "dependencies": {
+    "@bull-board/api": "^3.1.0",
+    "@bull-board/express": "^3.1.0",
     "body-parser": "^1.19.0",
-    "bull": "^3.22.6",
-    "bull-board": "^2.1.0",
-    "bullmq": "^1.28.0",
+    "bull": "^3.22.7",
+    "bullmq": "^1.30.1",
     "connect-ensure-login": "^0.1.1",
     "dotenv": "^10.0.0",
     "express": "^4.17.1",

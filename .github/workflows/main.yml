@@ -21,15 +21,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v2.3.4
 
-      - name: Change String Case
-        id: string
-        uses: ASzc/change-string-case-action@v2
-        with:
-          string: ${{ github.repository_owner }}
+      - name: Setup Node.js environment
+        uses: actions/setup-node@v2.1.5
 
-      - run: docker-compose -f docker-compose.test.yml run --rm sut
-        env:
-          IMAGE_NAME: ${{ steps.string.outputs.lowercase }}/bull-board
+      - name: Test
+        run: npm test
 
   build:
     runs-on: ubuntu-latest
