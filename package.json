@@ -6,9 +6,9 @@
   "private": true,
   "scripts": {
     "start": "node .",
-    "pretest": "npm run stack:up",
+    "pretest": "npm run test:stack:up",
     "test": "docker-compose -f docker-compose.test.yml run --rm sut",
-    "stack:up": "docker-compose -f docker-compose.test.yml up -d --build"
+    "test:stack:up": "docker-compose -f docker-compose.test.yml up -d --build bull-board"
   },
   "repository": "https://github.com/Diluka/bull-board-docker",
   "dependencies": {
