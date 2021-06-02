@@ -102,5 +102,5 @@ jobs:
       - name: Create Release
         uses: ncipollo/release-action@v1.8.6
         with:
-          tag: ${{ github.event.ref }}
+          tag: v${{ steps.names.outputs.tag }}
           token: ${{ secrets.GITHUB_TOKEN }}
