@@ -1,4 +1,0 @@
-#!/bin/bash
-
-docker build -f $DOCKERFILE_PATH -t $IMAGE_NAME .
-docker build -f $DOCKERFILE_PATH -t $IMAGE_NAME-arm64 --platform linux/arm64 .
