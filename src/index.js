@@ -9,7 +9,6 @@ const redis = require('redis');
 const session = require('express-session');
 const passport = require('passport');
 const {ensureLoggedIn} = require('connect-ensure-login');
-const bodyParser = require('body-parser');
 
 const {authRouter} = require('./login');
 const config = require('./config');
@@ -73,7 +72,7 @@ const sessionOpts = {
 app.use(session(sessionOpts));
 app.use(passport.initialize({}));
 app.use(passport.session({}));
-app.use(bodyParser.urlencoded({extended: false}));
+app.use(express.urlencoded());
 
 if (config.AUTH_ENABLED) {
 	app.use(config.LOGIN_PAGE, authRouter);
