@@ -8,15 +8,17 @@
     "start": "node .",
     "pretest": "npm run test:stack:up",
     "test": "docker-compose -f docker-compose.test.yml run --rm sut",
-    "test:stack:up": "docker-compose -f docker-compose.test.yml up -d --build bull-board"
+    "posttest": "npm run test:stack:down",
+    "test:stack:up": "docker-compose -f docker-compose.test.yml up -d --build bull-board",
+    "test:stack:down": "docker-compose -f docker-compose.test.yml down"
   },
   "repository": "https://github.com/Diluka/bull-board-docker",
   "dependencies": {
-    "@bull-board/api": "^3.1.0",
-    "@bull-board/express": "^3.1.0",
+    "@bull-board/api": "^3.2.6",
+    "@bull-board/express": "^3.2.6",
     "body-parser": "^1.19.0",
     "bull": "^3.22.7",
-    "bullmq": "^1.30.1",
+    "bullmq": "^1.31.0",
     "connect-ensure-login": "^0.1.1",
     "dotenv": "^10.0.0",
     "express": "^4.17.1",
