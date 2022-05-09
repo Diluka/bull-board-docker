@@ -10,7 +10,8 @@
     "test": "docker-compose -f docker-compose.test.yml run --rm sut",
     "posttest": "npm run test:stack:down",
     "test:stack:up": "docker-compose -f docker-compose.test.yml up -d --build bull-board",
-    "test:stack:down": "docker-compose -f docker-compose.test.yml down"
+    "test:stack:down": "docker-compose -f docker-compose.test.yml down",
+    "prepare": "husky install"
   },
   "repository": "https://github.com/Diluka/bull-board-docker",
   "dependencies": {
@@ -26,5 +27,29 @@
     "passport": "^0.5.2",
     "passport-local": "^1.0.0",
     "redis": "^3.1.2"
+  },
+  "devDependencies": {
+    "eslint": "^8.15.0",
+    "eslint-config-prettier": "^8.5.0",
+    "eslint-plugin-prettier": "^4.0.0",
+    "husky": "^8.0.0",
+    "lint-staged": "^12.4.1",
+    "prettier": "^2.6.2"
+  },
+  "prettier": {
+    "singleQuote": true,
+    "printWidth": 140,
+    "trailingComma": "all"
+  },
+  "eslintConfig": {
+    "extends": [
+      "plugin:prettier/recommended"
+    ],
+    "parserOptions": {
+      "ecmaVersion": 2021
+    }
+  },
+  "lint-staged": {
+    "*.js": "eslint --cache --fix"
   }
 }
