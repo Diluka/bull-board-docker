@@ -7,6 +7,7 @@ const bullmq = require('bullmq');
 const express = require('express');
 const redis = require('redis');
 const session = require('express-session');
+const { isDeepStrictEqual } = require('util');
 const passport = require('passport');
 const {ensureLoggedIn} = require('connect-ensure-login');
 
@@ -23,26 +24,46 @@ const redisConfig = {
   },
 };
 
-const client = redis.createClient(redisConfig.redis);
 const serverAdapter = new ExpressAdapter();
-const {setQueues} = createBullBoard({queues: [], serverAdapter});
+const client = redis.createClient(redisConfig.redis);
+const { setQueues, replaceQueues } = createBullBoard({queues: [], serverAdapter});
 const router = serverAdapter.getRouter();
 
+let lastValidQueues = null
+
+const createAdapters = (queues) => queues.map(
+	(item) => {
+		if (config.BULL_VERSION === 'BULLMQ') {
+			return new BullMQAdapter(new bullmq.Queue(item, {connection: redisConfig.redis}));
+		}
+
+		return new BullAdapter(new Queue(item, redisConfig));
+	}
+);
+
 client.KEYS(`${config.BULL_PREFIX}:*`, (err, keys) => {
-  const uniqKeys = new Set(keys.map(key => key.replace(/^.+?:(.+?):.+?$/, '$1')));
-  const queueList = Array.from(uniqKeys).sort().map(
-    (item) => {
-      if (config.BULL_VERSION === 'BULLMQ') {
-        return new BullMQAdapter(new bullmq.Queue(item, {connection: redisConfig.redis}));
-      }
+	const uniqKeys = new Set(keys.map(key => key.replace(/^.+?:(.+?):.+?$/, '$1')));
+	const actualQueues = Array.from(uniqKeys).sort();
+	lastValidQueues = actualQueues;
+	const queueList = createAdapters(actualQueues);
 
-      return new BullAdapter(new Queue(item, redisConfig));
-    }
-  );
-
-  setQueues(queueList);
-  console.log('done!');
+	setQueues(queueList);
+	console.log('done!');
 });
+
+const updateQueues = () => {
+	client.KEYS(`${config.BULL_PREFIX}:*`, (err, keys) => {
+		const uniqKeys = new Set(keys.map(key => key.replace(/^.+?:(.+?):.+?$/, '$1')));
+		const actualQueues = Array.from(uniqKeys).sort();
+		if (isDeepStrictEqual(lastValidQueues, actualQueues)) return;
+
+		lastValidQueues = actualQueues;
+		const queueList = createAdapters(actualQueues);
+
+		replaceQueues(queueList);
+		console.log('detected queue change, updating UI');
+	});
+}
 
 serverAdapter.setBasePath(config.PROXY_PATH);
 
@@ -81,7 +102,15 @@ if (config.AUTH_ENABLED) {
 	app.use(config.HOME_PAGE, router);
 }
 
+let updateQueuesInterval = null
+const gracefullyShutdown = () => clearInterval(updateQueuesInterval)
+
 app.listen(config.PORT, () => {
 	console.log(`bull-board is started http://localhost:${config.PORT}${config.HOME_PAGE}`);
 	console.log(`bull-board is fetching queue list, please wait...`);
+
+	// poor man queue update process
+	updateQueuesInterval = setInterval(updateQueues, 60 * 1000)
+	process.on('SIGINT', gracefullyShutdown)
+	process.on('SIGTERM', gracefullyShutdown)
 });
