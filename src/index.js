@@ -118,7 +118,7 @@ const server = app.listen(config.PORT, () => {
   console.log(`bull-board is fetching queue list, please wait...`);
 
   // poor man queue update process
-  updateQueuesInterval = setInterval(updateQueues, 60 * 100);
+  updateQueuesInterval = setInterval(updateQueues, 60 * 1000);
   process.on('SIGINT', gracefullyShutdown);
   process.on('SIGTERM', gracefullyShutdown);
 });
