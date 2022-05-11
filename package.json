@@ -1,6 +1,6 @@
 {
   "name": "bull-board-docker",
-  "version": "3.11.2",
+  "version": "3.11.3",
   "main": "src/index.js",
   "license": "MIT",
   "private": true,
