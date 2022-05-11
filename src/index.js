@@ -5,9 +5,8 @@ const { ExpressAdapter } = require('@bull-board/express');
 const Queue = require('bull');
 const bullmq = require('bullmq');
 const express = require('express');
-const redis = require('redis');
+const redis = require('ioredis');
 const session = require('express-session');
-const { isDeepStrictEqual } = require('util');
 const passport = require('passport');
 const { ensureLoggedIn } = require('connect-ensure-login');
 
@@ -26,43 +25,44 @@ const redisConfig = {
 
 const serverAdapter = new ExpressAdapter();
 const client = redis.createClient(redisConfig.redis);
-const { setQueues, replaceQueues } = createBullBoard({ queues: [], serverAdapter });
+const { replaceQueues, removeQueue } = createBullBoard({ queues: [], serverAdapter });
 const router = serverAdapter.getRouter();
 
-let lastValidQueues = null;
+const queueMap = new Map();
 
-const createAdapters = (queues) =>
-  queues.map((item) => {
-    if (config.BULL_VERSION === 'BULLMQ') {
-      return new BullMQAdapter(new bullmq.Queue(item, { connection: redisConfig.redis }));
-    }
-
-    return new BullAdapter(new Queue(item, redisConfig));
-  });
-
-client.KEYS(`${config.BULL_PREFIX}:*`, (err, keys) => {
+async function updateQueues() {
+  const isBullMQ = () => config.BULL_VERSION === 'BULLMQ';
+  const keys = await client.keys(`${config.BULL_PREFIX}:*`);
   const uniqKeys = new Set(keys.map((key) => key.replace(/^.+?:(.+?):.+?$/, '$1')));
   const actualQueues = Array.from(uniqKeys).sort();
-  lastValidQueues = actualQueues;
-  const queueList = createAdapters(actualQueues);
 
-  setQueues(queueList);
-  console.log('done!');
-});
+  for (const queueName of actualQueues) {
+    if (!queueMap.has(queueName)) {
+      queueMap.set(
+        queueName,
+        isBullMQ() ? new bullmq.Queue(queueName, { connection: redisConfig.redis }) : new Queue(queueName, redisConfig),
+      );
+    }
+  }
 
-const updateQueues = () => {
-  client.KEYS(`${config.BULL_PREFIX}:*`, (err, keys) => {
-    const uniqKeys = new Set(keys.map((key) => key.replace(/^.+?:(.+?):.+?$/, '$1')));
-    const actualQueues = Array.from(uniqKeys).sort();
-    if (isDeepStrictEqual(lastValidQueues, actualQueues)) return;
+  for (const [queueName, queue] of queueMap.entries()) {
+    if (!actualQueues.includes(queueName)) {
+      await queue.close();
+      queueMap.delete(queueName);
+    }
+  }
 
-    lastValidQueues = actualQueues;
-    const queueList = createAdapters(actualQueues);
+  const adapters = [];
+  for (const queue of queueMap.values()) {
+    adapters.push(isBullMQ() ? new BullMQAdapter(queue) : new BullAdapter(queue));
+  }
 
-    replaceQueues(queueList);
-    console.log('detected queue change, updating UI');
-  });
-};
+  replaceQueues(adapters);
+
+  console.log('queue updated!');
+}
+
+updateQueues();
 
 serverAdapter.setBasePath(config.PROXY_PATH);
 
@@ -92,7 +92,7 @@ const sessionOpts = {
 app.use(session(sessionOpts));
 app.use(passport.initialize({}));
 app.use(passport.session({}));
-app.use(express.urlencoded());
+app.use(express.urlencoded({ extended: true }));
 
 if (config.AUTH_ENABLED) {
   app.use(config.LOGIN_PAGE, authRouter);
@@ -102,14 +102,23 @@ if (config.AUTH_ENABLED) {
 }
 
 let updateQueuesInterval = null;
-const gracefullyShutdown = () => clearInterval(updateQueuesInterval);
+const gracefullyShutdown = async () => {
+  console.log('shutting down...');
+  clearInterval(updateQueuesInterval);
+  for (const queue of queueMap.values()) {
+    removeQueue(queue.name);
+    await queue.close();
+  }
+  await client.disconnect();
+  server.close();
+};
 
-app.listen(config.PORT, () => {
+const server = app.listen(config.PORT, () => {
   console.log(`bull-board is started http://localhost:${config.PORT}${config.HOME_PAGE}`);
   console.log(`bull-board is fetching queue list, please wait...`);
 
   // poor man queue update process
-  updateQueuesInterval = setInterval(updateQueues, 60 * 1000);
+  updateQueuesInterval = setInterval(updateQueues, 60 * 100);
   process.on('SIGINT', gracefullyShutdown);
   process.on('SIGTERM', gracefullyShutdown);
 });

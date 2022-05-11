@@ -18,7 +18,8 @@ ENV REDIS_DB 0
 ENV PROXY_PATH ''
 ENV PORT 3000
 
-RUN npm ci --omit=dev --ignore-scripts
+RUN npm set-script prepare ""
+RUN npm ci --omit=dev
 
 ADD . .
 
