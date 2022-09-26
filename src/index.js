@@ -58,8 +58,6 @@ async function updateQueues() {
   }
 
   replaceQueues(adapters);
-
-  console.log('queue updated!');
 }
 
 updateQueues();
