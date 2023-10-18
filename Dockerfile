@@ -1,4 +1,4 @@
-FROM node:16-alpine
+FROM node:18-alpine
 
 WORKDIR /usr/app
 
@@ -18,7 +18,7 @@ ENV REDIS_DB 0
 ENV PROXY_PATH ''
 ENV PORT 3000
 
-RUN npm set-script prepare ""
+RUN npm pkg delete scripts.prepare
 RUN npm ci --omit=dev
 
 ADD . .
