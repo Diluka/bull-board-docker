@@ -45,7 +45,9 @@ async function updateQueues() {
     if (!queueMap.has(queueName)) {
       queueMap.set(
         queueName,
-        isBullMQ() ? new bullmq.Queue(queueName, { connection: redisConfig.redis }) : new Queue(queueName, redisConfig),
+        isBullMQ()
+          ? new bullmq.Queue(queueName, { connection: redisConfig.redis, prefix: config.BULL_PREFIX })
+          : new Queue(queueName, { ...redisConfig, prefix: config.BULL_PREFIX }),
       );
     }
   }
