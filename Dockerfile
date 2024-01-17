@@ -2,9 +2,6 @@ FROM node:20-alpine
 
 WORKDIR /usr/app
 
-RUN npm i -g healthcheck-cli
-HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 CMD healthcheck localhost 3000 /
-
 ADD ./package.json .
 ADD ./package-lock.json .
 
