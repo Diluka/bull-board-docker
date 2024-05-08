@@ -15,6 +15,7 @@ const config = {
   REDIS_DB: process.env.REDIS_DB || '0',
   REDIS_PASSWORD: process.env.REDIS_PASSWORD,
   REDIS_USE_TLS: process.env.REDIS_USE_TLS,
+  REDIS_IS_CLUSTER: process.env.REDIS_IS_CLUSTER,
   BULL_PREFIX: process.env.BULL_PREFIX || 'bull',
   BULL_VERSION: process.env.BULL_VERSION || 'BULLMQ',
   PORT: process.env.PORT || 3000,

@@ -5,7 +5,7 @@ const { ExpressAdapter } = require('@bull-board/express');
 const Queue = require('bull');
 const bullmq = require('bullmq');
 const express = require('express');
-const redis = require('ioredis');
+const IORedis = require('ioredis');
 const session = require('express-session');
 const passport = require('passport');
 const { ensureLoggedIn } = require('connect-ensure-login');
@@ -23,8 +23,27 @@ const redisConfig = {
   },
 };
 
+function createRedisClient() {
+  return config.REDIS_IS_CLUSTER === 'true'
+    ? new IORedis.Cluster(
+        [
+          {
+            port: config.REDIS_PORT,
+            host: config.REDIS_HOST,
+          },
+        ],
+        {
+          redisOptions: {
+            ...(config.REDIS_PASSWORD && { password: config.REDIS_PASSWORD }),
+            tls: config.REDIS_USE_TLS === 'true',
+          },
+        },
+      )
+    : new IORedis(redisConfig.redis);
+}
+
 const serverAdapter = new ExpressAdapter();
-const client = redis.createClient(redisConfig.redis);
+const client = createRedisClient();
 const { replaceQueues, removeQueue } = createBullBoard({ queues: [], serverAdapter });
 const router = serverAdapter.getRouter();
 
@@ -46,8 +65,13 @@ async function updateQueues() {
       queueMap.set(
         queueName,
         isBullMQ()
-          ? new bullmq.Queue(queueName, { connection: redisConfig.redis, prefix: config.BULL_PREFIX })
-          : new Queue(queueName, { ...redisConfig, prefix: config.BULL_PREFIX }),
+          ? new bullmq.Queue(queueName, { connection: createRedisClient(), prefix: config.BULL_PREFIX })
+          : new Queue(queueName, {
+              createClient(type, redisOpts) {
+                return createRedisClient();
+              },
+              prefix: config.BULL_PREFIX,
+            }),
       );
     }
   }
