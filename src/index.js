@@ -51,12 +51,12 @@ const queueMap = new Map();
 
 async function updateQueues() {
   const isBullMQ = () => config.BULL_VERSION === 'BULLMQ';
-  const keys = await client.keys(`${config.BULL_PREFIX}:*`);
+  const keys = await client.keys(`${config.BULL_PREFIX}:*:id`);
   const uniqKeys = new Set(
     keys
       // ':' may contain in BULL_PREFIX
       .map((key) => key.replace(config.BULL_PREFIX), 'bull')
-      .map((key) => key.replace(/^.+?:(.+?):.+?$/, '$1')),
+      .map((key) => key.replace(/^.+?:(.+?):id$/, '$1')),
   );
   const actualQueues = Array.from(uniqKeys).sort();
 
