@@ -15,10 +15,10 @@
   },
   "repository": "https://github.com/Diluka/bull-board-docker",
   "dependencies": {
-    "@bull-board/api": "^5.19.0",
-    "@bull-board/express": "^5.19.0",
-    "bull": "^4.12.9",
-    "bullmq": "^5.7.13",
+    "@bull-board/api": "^5.20.5",
+    "@bull-board/express": "^5.20.5",
+    "bull": "^4.15.1",
+    "bullmq": "^5.8.6",
     "connect-ensure-login": "^0.1.1",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
@@ -33,8 +33,8 @@
     "eslint-config-prettier": "^9.1.0",
     "eslint-plugin-prettier": "^5.1.3",
     "husky": "^9.0.11",
-    "lint-staged": "^15.2.5",
-    "prettier": "^3.2.5"
+    "lint-staged": "^15.2.7",
+    "prettier": "^3.3.2"
   },
   "prettier": {
     "singleQuote": true,
