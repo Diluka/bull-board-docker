@@ -122,6 +122,7 @@ app.use(session(sessionOpts));
 app.use(passport.initialize({}));
 app.use(passport.session({}));
 app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '50mb' }));
 
 if (config.AUTH_ENABLED) {
   app.use(config.LOGIN_PAGE, authRouter);
