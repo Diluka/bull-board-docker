@@ -1,17 +1,23 @@
-const { createBullBoard } = require('@bull-board/api');
-const { BullAdapter } = require('@bull-board/api/bullAdapter');
-const { BullMQAdapter } = require('@bull-board/api/bullMQAdapter');
-const { ExpressAdapter } = require('@bull-board/express');
-const Queue = require('bull');
-const bullmq = require('bullmq');
-const express = require('express');
-const IORedis = require('ioredis');
-const session = require('express-session');
-const passport = require('passport');
-const { ensureLoggedIn } = require('connect-ensure-login');
+import { createBullBoard } from '@bull-board/api';
+import { BullAdapter } from '@bull-board/api/bullAdapter.js';
+import { BullMQAdapter } from '@bull-board/api/bullMQAdapter.js';
+import { ExpressAdapter } from '@bull-board/express';
+import * as LegacyQueue from 'bull';
+import { Queue } from 'bullmq';
+import { ensureLoggedIn } from 'connect-ensure-login';
+import express from 'express';
+import session from 'express-session';
+import IORedis from 'ioredis';
+import { dirname } from 'node:path';
+import { clearInterval, setInterval } from 'node:timers';
+import { fileURLToPath } from 'node:url';
+import passport from 'passport';
+import config from './config.mjs';
+import { authRouter } from './login.mjs';
 
-const { authRouter } = require('./login');
-const config = require('./config');
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 const redisConfig = {
   redis: {
@@ -26,19 +32,19 @@ const redisConfig = {
 function createRedisClient() {
   return config.REDIS_IS_CLUSTER === 'true'
     ? new IORedis.Cluster(
-        [
-          {
-            port: config.REDIS_PORT,
-            host: config.REDIS_HOST,
-          },
-        ],
+      [
         {
-          redisOptions: {
-            ...(config.REDIS_PASSWORD && { password: config.REDIS_PASSWORD }),
-            tls: config.REDIS_USE_TLS === 'true',
-          },
+          port: config.REDIS_PORT,
+          host: config.REDIS_HOST,
         },
-      )
+      ],
+      {
+        redisOptions: {
+          ...(config.REDIS_PASSWORD && { password: config.REDIS_PASSWORD }),
+          tls: config.REDIS_USE_TLS === 'true',
+        },
+      },
+    )
     : new IORedis(redisConfig.redis);
 }
 
@@ -65,13 +71,13 @@ async function updateQueues() {
       queueMap.set(
         queueName,
         isBullMQ()
-          ? new bullmq.Queue(queueName, { connection: createRedisClient(), prefix: config.BULL_PREFIX })
-          : new Queue(queueName, {
-              createClient(type, redisOpts) {
-                return createRedisClient();
-              },
-              prefix: config.BULL_PREFIX,
-            }),
+          ? new Queue(queueName, { connection: createRedisClient(), prefix: config.BULL_PREFIX })
+          : new LegacyQueue(queueName, {
+            createClient(type, redisOpts) {
+              return createRedisClient();
+            },
+            prefix: config.BULL_PREFIX,
+          }),
       );
     }
   }
@@ -91,7 +97,7 @@ async function updateQueues() {
   replaceQueues(adapters);
 }
 
-updateQueues();
+await updateQueues();
 
 serverAdapter.setBasePath(config.PROXY_PATH);
 
@@ -102,7 +108,7 @@ app.set('view engine', 'ejs');
 
 if (app.get('env') !== 'production') {
   console.log('bull-board condig:', config);
-  const morgan = require('morgan');
+  const { default: morgan } = await import('morgan');
   app.use(morgan('combined'));
 }
 
@@ -135,12 +141,17 @@ let updateQueuesInterval = null;
 const gracefullyShutdown = async () => {
   console.log('shutting down...');
   clearInterval(updateQueuesInterval);
+  console.log('closing queues...');
   for (const queue of queueMap.values()) {
     removeQueue(queue.name);
     await queue.close();
   }
+  console.log('closing redis...');
   await client.disconnect();
+  console.log('closing server...');
   server.close();
+  console.log('bye');
+  process.exit();
 };
 
 const server = app.listen(config.PORT, () => {

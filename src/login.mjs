@@ -1,13 +1,12 @@
-const passport = require('passport');
-const LocalStrategy = require('passport-local').Strategy;
-const express = require('express');
+import express from 'express';
+import passport from 'passport';
+import { Strategy as LocalStrategy } from 'passport-local';
+import config from './config.mjs';
 
-const config = require('./config');
-
-const authRouter = express.Router();
+export const authRouter = express.Router();
 
 passport.use(
-  new LocalStrategy(function (username, password, cb) {
+  new LocalStrategy(function(username, password, cb) {
     if (username === config.USER_LOGIN && password === config.USER_PASSWORD) {
       return cb(null, { user: 'bull-board' });
     }
@@ -35,5 +34,3 @@ authRouter
       failureRedirect: config.PROXY_LOGIN_PAGE,
     }),
   );
-
-exports.authRouter = authRouter;
