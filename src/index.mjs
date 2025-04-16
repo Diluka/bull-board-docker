@@ -2,7 +2,7 @@ import { createBullBoard } from '@bull-board/api';
 import { BullAdapter } from '@bull-board/api/bullAdapter.js';
 import { BullMQAdapter } from '@bull-board/api/bullMQAdapter.js';
 import { ExpressAdapter } from '@bull-board/express';
-import * as LegacyQueue from 'bull';
+import LegacyQueue from 'bull';
 import { Queue } from 'bullmq';
 import { ensureLoggedIn } from 'connect-ensure-login';
 import express from 'express';
