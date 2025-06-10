@@ -71,10 +71,10 @@ async function updateQueues() {
       queueMap.set(
         queueName,
         isBullMQ()
-          ? new Queue(queueName, { connection: createRedisClient(), prefix: config.BULL_PREFIX })
+          ? new Queue(queueName, { connection: client, prefix: config.BULL_PREFIX })
           : new LegacyQueue(queueName, {
             createClient(type, redisOpts) {
-              return createRedisClient();
+              return client;
             },
             prefix: config.BULL_PREFIX,
           }),
