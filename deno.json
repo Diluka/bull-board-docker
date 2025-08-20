@@ -31,6 +31,17 @@
     "test": "docker compose -f docker-compose.test.yml run --rm sut"
   },
   "imports": {
-    "@/": "./src/"
+    "@/": "./src/",
+    "@bull-board/api": "npm:@bull-board/api@6.10.0",
+    "@bull-board/api/bullAdapter.js": "npm:@bull-board/api@6.10.0/bullAdapter.js",
+    "@bull-board/api/bullMQAdapter.js": "npm:@bull-board/api@6.10.0/bullMQAdapter.js",
+    "@bull-board/express": "npm:@bull-board/express@6.10.0",
+    "bull": "npm:bull@4.16.5", 
+    "bullmq": "npm:bullmq@5.53.2",
+    "ioredis": "npm:ioredis@5.6.1",
+    "express": "npm:express@5.1.0",
+    "express-session": "npm:express-session@1.18.1",
+    "passport": "npm:passport@0.7.0",
+    "passport-local": "npm:passport-local@1.0.0"
   }
 }

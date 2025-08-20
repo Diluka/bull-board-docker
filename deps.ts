@@ -1,43 +1,29 @@
-// Self-contained dependencies for demonstration
-// In production, replace these with proper Deno libraries
+// Real dependencies for Deno runtime using npm: specifiers
+// These are the actual Bull Board and Redis packages
 
+// Bull Board API and adapters  
+export { createBullBoard } from "npm:@bull-board/api@6.10.0";
+export { BullAdapter } from "npm:@bull-board/api@6.10.0/bullAdapter.js";
+export { BullMQAdapter } from "npm:@bull-board/api@6.10.0/bullMQAdapter.js";
+export { ExpressAdapter } from "npm:@bull-board/express@6.10.0";
+
+// Queue libraries
+export { default as Bull } from "npm:bull@4.16.5";
+export { Queue } from "npm:bullmq@5.53.2";
+
+// Redis client
+export { default as IORedis } from "npm:ioredis@5.6.1";
+
+// Express and auth
+export { default as express } from "npm:express@5.1.0";
+export { default as session } from "npm:express-session@1.18.1";
+export { default as passport } from "npm:passport@0.7.0";
+export { Strategy as LocalStrategy } from "npm:passport-local@1.0.0";
+
+// Deno HTTP server wrapper
 export function serve(handler: (req: Request) => Promise<Response>, options: { port: number }) {
   return Deno.serve(options, handler);
 }
 
-// Use built-in path functions
-export function join(...paths: string[]): string {
-  return paths.join('/').replace(/\/+/g, '/');
-}
-
-export function dirname(path: string): string {
-  return path.split('/').slice(0, -1).join('/') || '/';
-}
-
-// Mock implementations for demonstration purposes
-export const createBullBoard = (config: any) => ({
-  replaceQueues: (queues: any[]) => console.log('🔄 Replacing queues:', queues.length),
-  removeQueue: (name: string) => console.log('❌ Removing queue:', name),
-});
-
-export const BullAdapter = class {
-  constructor(public queue: any) {}
-};
-
-export const BullMQAdapter = class {
-  constructor(public queue: any) {}
-};
-
-export const Bull = class {
-  constructor(public name: string, public config: any) {}
-  async close() {
-    console.log('🔌 Closing Bull queue:', this.name);
-  }
-};
-
-export const Queue = class {
-  constructor(public name: string, public config: any) {}
-  async close() {
-    console.log('🔌 Closing BullMQ queue:', this.name);
-  }
-};
+// Path utilities using Deno standard library
+export { join, dirname } from "https://deno.land/std@0.208.0/path/mod.ts";
