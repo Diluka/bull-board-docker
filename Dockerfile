@@ -1,4 +1,4 @@
-FROM denoland/deno:alpine AS builder
+FROM denoland/deno:alpine
 
 WORKDIR /usr/app
 
@@ -11,12 +11,6 @@ RUN deno install
 
 # Copy source code
 COPY ./src ./src
-
-RUN deno task build
-
-FROM denoland/deno:alpine AS runner
-
-COPY --from=builder /usr/app/dist/bull-board /usr/local/bin/bull-board
 
 # Environment variables
 ENV NODE_ENV=production
@@ -33,4 +27,4 @@ ENV PORT=3000
 
 EXPOSE $PORT
 
-CMD ["bull-board"]
+CMD ["deno", "task", "start"]
