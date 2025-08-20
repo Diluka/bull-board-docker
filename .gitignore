@@ -9,7 +9,12 @@ yarn-error.log*
 node_modules/
 jspm_packages/
 
+.vscode/
+!.vscode/settings.json
+!.vscode/extensions.json
+.claude/
 .idea/
 .env
 .npmrc
 .eslintcache
+dist/

@@ -12,18 +12,32 @@ on:
       - main
 
 jobs:
-
   test:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js environment
-        uses: actions/setup-node@v3
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: lts
+          cache: true
+
+      - name: Cache dependencies
+        run: deno cache src/*.ts
+
+      - name: Check TypeScript
+        run: deno check src/*.ts
+
+      - name: Lint code
+        run: deno lint src/
+
+      - name: Format check
+        run: deno fmt --check src/
 
       - name: Test
-        run: npm test
+        run: deno task test
 
   publish_next:
     runs-on: ubuntu-latest
