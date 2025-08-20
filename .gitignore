@@ -1,18 +1,17 @@
 # Logs
 logs
 *.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
 
-# Dependency directories
-node_modules/
-jspm_packages/
+# Deno
+.deno/
 
-# TypeScript build output
-dist/
-
-.idea/
+# Environment
 .env
-.npmrc
-.eslintcache
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db

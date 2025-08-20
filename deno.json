@@ -1,0 +1,36 @@
+{
+  "compilerOptions": {
+    "allowJs": true,
+    "lib": ["deno.window"],
+    "strict": true
+  },
+  "lint": {
+    "files": {
+      "include": ["src/"],
+      "exclude": ["dist/"]
+    },
+    "rules": {
+      "tags": ["recommended"]
+    }
+  },
+  "fmt": {
+    "files": {
+      "include": ["src/"],
+      "exclude": ["dist/"]
+    },
+    "options": {
+      "singleQuote": true,
+      "lineWidth": 140
+    }
+  },
+  "tasks": {
+    "start": "deno run --allow-net --allow-env --allow-read src/index.ts",
+    "dev": "deno run --allow-net --allow-env --allow-read --watch src/index.ts",
+    "lint": "deno lint",
+    "fmt": "deno fmt",
+    "test": "docker compose -f docker-compose.test.yml run --rm sut"
+  },
+  "imports": {
+    "@/": "./src/"
+  }
+}
