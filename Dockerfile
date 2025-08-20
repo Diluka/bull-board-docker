@@ -1,29 +1,36 @@
-FROM node:20-alpine
+FROM denoland/deno:alpine AS builder
 
 WORKDIR /usr/app
 
-ADD ./package.json .
-ADD ./package-lock.json .
+# Copy configuration files
+COPY ./deno.json .
+COPY ./deno.lock .
+COPY ./package.json .
 
-ENV NODE_ENV production
-ENV REDIS_HOST localhost
-ENV REDIS_PORT 6379
-ENV REDIS_USE_TLS false
-ENV REDIS_PASSWORD ''
-ENV REDIS_IS_CLUSTER false
-ENV BULL_PREFIX bull
-ENV BULL_VERSION BULLMQ
-ENV USER_LOGIN ''
-ENV USER_PASSWORD ''
-ENV REDIS_DB 0
-ENV PROXY_PATH ''
-ENV PORT 3000
+RUN deno install
 
-RUN npm pkg delete scripts.prepare
-RUN npm ci --omit=dev
+# Copy source code
+COPY ./src ./src
 
-ADD . .
+RUN deno task build
+
+FROM denoland/deno:alpine AS runner
+
+COPY --from=builder /usr/app/dist/bull-board /usr/local/bin/bull-board
+
+# Environment variables
+ENV NODE_ENV=production
+ENV REDIS_HOST=localhost
+ENV REDIS_PORT=6379
+ENV REDIS_USE_TLS=false
+ENV REDIS_IS_CLUSTER=false
+ENV BULL_PREFIX=bull
+ENV BULL_VERSION=BULLMQ
+ENV USER_LOGIN=''
+ENV REDIS_DB=0
+ENV PROXY_PATH=''
+ENV PORT=3000
 
 EXPOSE $PORT
 
-CMD ["npm", "start"]
+CMD ["bull-board"]

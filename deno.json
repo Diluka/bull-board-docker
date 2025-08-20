@@ -1,0 +1,17 @@
+{
+  "lint": {
+    "rules": {
+      "tags": [
+        "recommended"
+      ]
+    }
+  },
+  "fmt": {
+    "useTabs": false,
+    "lineWidth": 140,
+    "indentWidth": 2,
+    "singleQuote": true,
+    "proseWrap": "preserve"
+  },
+  "nodeModulesDir": "auto"
+}
