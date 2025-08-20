@@ -54,25 +54,6 @@
     "printWidth": 140,
     "trailingComma": "all"
   },
-  "eslintConfig": {
-    "extends": [
-      "plugin:prettier/recommended"
-    ],
-    "parserOptions": {
-      "ecmaVersion": 2023
-    },
-    "overrides": [
-      {
-        "files": [
-          "*.ts"
-        ],
-        "parser": "@typescript-eslint/parser",
-        "parserOptions": {
-          "project": "./tsconfig.json"
-        }
-      }
-    ]
-  },
   "lint-staged": {
     "*.{js,ts}": "eslint --cache --fix"
   }
