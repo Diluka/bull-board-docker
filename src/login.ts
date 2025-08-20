@@ -1,12 +1,12 @@
 import express from 'express';
 import passport from 'passport';
 import { Strategy as LocalStrategy } from 'passport-local';
-import config from './config.mjs';
+import config from './config.js';
 
 export const authRouter = express.Router();
 
 passport.use(
-  new LocalStrategy(function(username, password, cb) {
+  new LocalStrategy(function(username: string, password: string, cb) {
     if (username === config.USER_LOGIN && password === config.USER_PASSWORD) {
       return cb(null, { user: 'bull-board' });
     }
@@ -15,11 +15,11 @@ passport.use(
   }),
 );
 
-passport.serializeUser((user, cb) => {
+passport.serializeUser((user: any, cb) => {
   cb(null, user);
 });
 
-passport.deserializeUser((user, cb) => {
+passport.deserializeUser((user: any, cb) => {
   cb(null, user);
 });
 

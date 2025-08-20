@@ -20,9 +20,16 @@ ENV PROXY_PATH ''
 ENV PORT 3000
 
 RUN npm pkg delete scripts.prepare
-RUN npm ci --omit=dev
+# Install all dependencies including dev dependencies for TypeScript compilation
+RUN npm ci
 
 ADD . .
+
+# Build TypeScript
+RUN npm run build
+
+# Remove dev dependencies to reduce image size
+RUN npm ci --omit=dev --ignore-scripts
 
 EXPOSE $PORT
 

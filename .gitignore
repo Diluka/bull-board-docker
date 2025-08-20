@@ -9,6 +9,9 @@ yarn-error.log*
 node_modules/
 jspm_packages/
 
+# TypeScript build output
+dist/
+
 .idea/
 .env
 .npmrc

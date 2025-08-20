@@ -2,7 +2,7 @@ import { createBullBoard } from '@bull-board/api';
 import { BullAdapter } from '@bull-board/api/bullAdapter.js';
 import { BullMQAdapter } from '@bull-board/api/bullMQAdapter.js';
 import { ExpressAdapter } from '@bull-board/express';
-import LegacyQueue from 'bull';
+import Bull from 'bull';
 import { Queue } from 'bullmq';
 import { ensureLoggedIn } from 'connect-ensure-login';
 import express from 'express';
@@ -12,24 +12,34 @@ import { dirname } from 'node:path';
 import { clearInterval, setInterval } from 'node:timers';
 import { fileURLToPath } from 'node:url';
 import passport from 'passport';
-import config from './config.mjs';
-import { authRouter } from './login.mjs';
-
+import config from './config.js';
+import { authRouter } from './login.js';
+import type { Server } from 'node:http';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const redisConfig = {
+interface RedisConfig {
+  redis: {
+    port: number;
+    host: string;
+    db: number;
+    password?: string;
+    tls?: Record<string, unknown>;
+  };
+}
+
+const redisConfig: RedisConfig = {
   redis: {
     port: config.REDIS_PORT,
     host: config.REDIS_HOST,
-    db: config.REDIS_DB,
+    db: Number(config.REDIS_DB),
     ...(config.REDIS_PASSWORD && { password: config.REDIS_PASSWORD }),
-    tls: config.REDIS_USE_TLS === 'true',
+    ...(config.REDIS_USE_TLS === 'true' && { tls: {} }),
   },
 };
 
-function createRedisClient() {
+function createRedisClient(): any {
   return config.REDIS_IS_CLUSTER === 'true'
     ? new IORedis.Cluster(
       [
@@ -41,7 +51,7 @@ function createRedisClient() {
       {
         redisOptions: {
           ...(config.REDIS_PASSWORD && { password: config.REDIS_PASSWORD }),
-          tls: config.REDIS_USE_TLS === 'true',
+          ...(config.REDIS_USE_TLS === 'true' && { tls: {} }),
         },
       },
     )
@@ -53,27 +63,27 @@ const client = createRedisClient();
 const { replaceQueues, removeQueue } = createBullBoard({ queues: [], serverAdapter });
 const router = serverAdapter.getRouter();
 
-const queueMap = new Map();
+const queueMap = new Map<string, Queue | Bull.Queue>();
 
-async function updateQueues() {
-  const isBullMQ = () => config.BULL_VERSION === 'BULLMQ';
+async function updateQueues(): Promise<void> {
+  const isBullMQ = (): boolean => config.BULL_VERSION === 'BULLMQ';
   const keys = await client.keys(`${config.BULL_PREFIX}:*:id`);
   const uniqKeys = new Set(
     keys
       // ':' may contain in BULL_PREFIX
-      .map((key) => key.replace(config.BULL_PREFIX), 'bull')
-      .map((key) => key.replace(/^.+?:(.+?):id$/, '$1')),
+      .map((key: string) => key.replace(config.BULL_PREFIX, 'bull'))
+      .map((key: string) => key.replace(/^.+?:(.+?):id$/, '$1')),
   );
   const actualQueues = Array.from(uniqKeys).sort();
 
   for (const queueName of actualQueues) {
-    if (!queueMap.has(queueName)) {
+    if (!queueMap.has(queueName as string)) {
       queueMap.set(
-        queueName,
+        queueName as string,
         isBullMQ()
-          ? new Queue(queueName, { connection: client, prefix: config.BULL_PREFIX })
-          : new LegacyQueue(queueName, {
-            createClient(type, redisOpts) {
+          ? new Queue(queueName as string, { connection: client as any, prefix: config.BULL_PREFIX })
+          : new Bull(queueName as string, {
+            createClient() {
               return client;
             },
             prefix: config.BULL_PREFIX,
@@ -91,7 +101,7 @@ async function updateQueues() {
 
   const adapters = [];
   for (const queue of queueMap.values()) {
-    adapters.push(isBullMQ() ? new BullMQAdapter(queue) : new BullAdapter(queue));
+    adapters.push(isBullMQ() ? new BullMQAdapter(queue as Queue) : new BullAdapter(queue as Bull.Queue));
   }
 
   replaceQueues(adapters);
@@ -107,12 +117,12 @@ app.set('views', __dirname + '/views');
 app.set('view engine', 'ejs');
 
 if (app.get('env') !== 'production') {
-  console.log('bull-board condig:', config);
+  console.log('bull-board config:', config);
   const { default: morgan } = await import('morgan');
   app.use(morgan('combined'));
 }
 
-const sessionOpts = {
+const sessionOpts: session.SessionOptions = {
   name: 'bull-board.sid',
   secret: Math.random().toString(),
   resave: false,
@@ -126,7 +136,7 @@ const sessionOpts = {
 
 app.use(session(sessionOpts));
 app.use(passport.initialize({}));
-app.use(passport.session({}));
+app.use(passport.session({ pauseStream: false }));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json({ limit: '50mb' }));
 
@@ -137,10 +147,12 @@ if (config.AUTH_ENABLED) {
   app.use(config.HOME_PAGE, router);
 }
 
-let updateQueuesInterval = null;
-const gracefullyShutdown = async () => {
+let updateQueuesInterval: NodeJS.Timeout | null = null;
+const gracefullyShutdown = async (): Promise<void> => {
   console.log('shutting down...');
-  clearInterval(updateQueuesInterval);
+  if (updateQueuesInterval) {
+    clearInterval(updateQueuesInterval);
+  }
   console.log('closing queues...');
   for (const queue of queueMap.values()) {
     removeQueue(queue.name);
@@ -154,7 +166,7 @@ const gracefullyShutdown = async () => {
   process.exit();
 };
 
-const server = app.listen(config.PORT, () => {
+const server: Server = app.listen(config.PORT, () => {
   console.log(`bull-board is started http://localhost:${config.PORT}${config.HOME_PAGE}`);
   console.log(`bull-board is fetching queue list, please wait...`);
 
