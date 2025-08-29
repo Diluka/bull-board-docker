@@ -1,8 +1,8 @@
 {
   "version": "5",
   "specifiers": {
-    "npm:@bull-board/api@^6.12.0": "6.12.0_@bull-board+ui@6.12.0",
-    "npm:@bull-board/express@^6.12.0": "6.12.0_@bull-board+ui@6.12.0",
+    "npm:@bull-board/api@^6.12.7": "6.12.7_@bull-board+ui@6.12.7",
+    "npm:@bull-board/express@^6.12.7": "6.12.7_@bull-board+ui@6.12.7",
     "npm:@types/connect-ensure-login@~0.1.9": "0.1.9",
     "npm:@types/express-session@^1.18.2": "1.18.2",
     "npm:@types/express@^5.0.3": "5.0.3",
@@ -11,7 +11,7 @@
     "npm:@types/passport-local@^1.0.38": "1.0.38",
     "npm:@types/passport@^1.0.17": "1.0.17",
     "npm:bull@^4.16.5": "4.16.5",
-    "npm:bullmq@^5.58.0": "5.58.0",
+    "npm:bullmq@^5.58.2": "5.58.2",
     "npm:connect-ensure-login@~0.1.1": "0.1.1",
     "npm:dotenv@^16.6.1": "16.6.1",
     "npm:express-session@^1.18.2": "1.18.2",
@@ -22,15 +22,15 @@
     "npm:passport@0.7": "0.7.0"
   },
   "npm": {
-    "@bull-board/api@6.12.0_@bull-board+ui@6.12.0": {
-      "integrity": "sha512-tlMQTc0EAiYbv8gjR0lCYAXDL1Uc8/dPD9tKjxvG+m9lUUpPAoRUXUHNtzwVQo+AHiF6WHEK9iA3+8KHJamc/w==",
+    "@bull-board/api@6.12.7_@bull-board+ui@6.12.7": {
+      "integrity": "sha512-mI/akvhI937/IPB9+l2NN18Vd+RivCoNLIJ3h3ZxNrp3xetjX5R90l/wuHt5SG837sLkChgMhRVA2mJAiGypJA==",
       "dependencies": [
         "@bull-board/ui",
         "redis-info"
       ]
     },
-    "@bull-board/express@6.12.0_@bull-board+ui@6.12.0": {
-      "integrity": "sha512-wvydsoc/nX7OWWZIQ0TbjLST47nfKHMsWKZj26e+6R9YbvUtxZuKXpqWdDrRY/slpXUzvN0+3GkttMOUkuT92Q==",
+    "@bull-board/express@6.12.7_@bull-board+ui@6.12.7": {
+      "integrity": "sha512-KPzOQSk8HRg5sTO2zuAl8b55YBy4ljxZDs+vMBEE8J2yhER0Kx09sZwWfj8DfIK58+qSriEzgfNWn7loFTawTg==",
       "dependencies": [
         "@bull-board/api",
         "@bull-board/ui",
@@ -38,8 +38,8 @@
         "express"
       ]
     },
-    "@bull-board/ui@6.12.0": {
-      "integrity": "sha512-a1+9bUlNViXIQcO9KPOd1EP66Ts4caYHgsc5OuunDMZ9Q6Y7sfrQXMhfnv3JWahSNo3hiX6Fc8wIL4p/bcTwsw==",
+    "@bull-board/ui@6.12.7": {
+      "integrity": "sha512-EJvS84Ob661ASIjGH58RpKLb7upPM+kS9I7PdezS67Dtab1V8cq10E+Sb2WIvXVLaGgQU8eITiLBjgWze2uWsg==",
       "dependencies": [
         "@bull-board/api"
       ]
@@ -236,8 +236,8 @@
         "uuid@8.3.2"
       ]
     },
-    "bullmq@5.58.0": {
-      "integrity": "sha512-WIjvoSQ9jprId2gAZaPMQu3jaAkRCN8Wjj/pR39knwjULB7asB6XoSTqvnSbOsfyHMKln8el0MRvRJVY9VdmFA==",
+    "bullmq@5.58.2": {
+      "integrity": "sha512-HSGtNFM8Ttzml4OHO5cy6ju0ObnDmSedXJwpSUCFSDXR6l9MQe5CQCs/FzAb6Ac9EXYIvvF20UMV+C1OVDW39w==",
       "dependencies": [
         "cron-parser",
         "ioredis",
@@ -840,8 +840,8 @@
   "workspace": {
     "packageJson": {
       "dependencies": [
-        "npm:@bull-board/api@^6.12.0",
-        "npm:@bull-board/express@^6.12.0",
+        "npm:@bull-board/api@^6.12.7",
+        "npm:@bull-board/express@^6.12.7",
         "npm:@types/connect-ensure-login@~0.1.9",
         "npm:@types/express-session@^1.18.2",
         "npm:@types/express@^5.0.3",
@@ -850,7 +850,7 @@
         "npm:@types/passport-local@^1.0.38",
         "npm:@types/passport@^1.0.17",
         "npm:bull@^4.16.5",
-        "npm:bullmq@^5.58.0",
+        "npm:bullmq@^5.58.2",
         "npm:connect-ensure-login@~0.1.1",
         "npm:dotenv@^16.6.1",
         "npm:express-session@^1.18.2",

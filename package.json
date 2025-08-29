@@ -16,10 +16,10 @@
   },
   "repository": "https://github.com/Diluka/bull-board-docker",
   "dependencies": {
-    "@bull-board/api": "^6.12.0",
-    "@bull-board/express": "^6.12.0",
+    "@bull-board/api": "^6.12.7",
+    "@bull-board/express": "^6.12.7",
     "bull": "^4.16.5",
-    "bullmq": "^5.58.0",
+    "bullmq": "^5.58.2",
     "connect-ensure-login": "^0.1.1",
     "dotenv": "^16.6.1",
     "express": "^5.1.0",

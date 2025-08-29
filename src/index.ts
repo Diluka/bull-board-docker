@@ -1,6 +1,6 @@
 import { createBullBoard } from '@bull-board/api';
-import { BullAdapter } from '@bull-board/api/bullAdapter.js';
-import { BullMQAdapter } from '@bull-board/api/bullMQAdapter.js';
+import { BullAdapter } from '@bull-board/api/bullAdapter';
+import { BullMQAdapter } from '@bull-board/api/bullMQAdapter';
 import { ExpressAdapter } from '@bull-board/express';
 import LegacyQueue, { Queue as BullQueue } from 'bull';
 import { Queue } from 'bullmq';
@@ -130,7 +130,6 @@ app.use(session(sessionOpts));
 app.use(passport.initialize());
 app.use(passport.session());
 app.use(express.urlencoded({ extended: true }));
-app.use(express.json({ limit: '50mb' }));
 
 if (config.AUTH_ENABLED) {
   app.use(config.LOGIN_PAGE, authRouter);
