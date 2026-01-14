@@ -5,7 +5,7 @@ import { ExpressAdapter } from '@bull-board/express';
 import LegacyQueue, { Queue as BullQueue } from 'bull';
 import { Queue } from 'bullmq';
 import { ensureLoggedIn } from 'connect-ensure-login';
-import express from 'express';
+import express, { RequestHandler } from 'express';
 import session from 'express-session';
 import { Cluster, Redis, RedisOptions } from 'ioredis';
 import process from 'node:process';
@@ -149,10 +149,7 @@ if (config.AUTH_ENABLED) {
 
 // Prometheus metrics endpoint
 if (config.METRICS_ENABLED) {
-  const metricsAuth = config.AUTH_ENABLED
-    ? passport.authenticate('basic', { session: false })
-    // @ts-expect-error empty handler
-    : (req, res, next) => next();
+  const metricsAuth: RequestHandler = config.AUTH_ENABLED ? passport.authenticate('basic', { session: false }) : (req, res, next) => next();
 
   // All queues metrics
   app.get(`${config.PROXY_PATH}/metrics`, metricsAuth, async (req, res) => {

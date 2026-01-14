@@ -3,6 +3,9 @@
     "rules": {
       "tags": [
         "recommended"
+      ],
+      "exclude": [
+        "no-unused-vars"
       ]
     }
   },
