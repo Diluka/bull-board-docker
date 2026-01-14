@@ -69,12 +69,14 @@ async function updateQueues(): Promise<void> {
         queueName,
         isBullMQ()
           ? new Queue(queueName, {
-            connection: client as any,
+            // @ts-expect-error - ioredis version mismatch between bull and current version
+            connection: client,
             prefix: config.BULL_PREFIX,
           })
+          // @ts-expect-error - ioredis version mismatch between bull and current version
           : new LegacyQueue(queueName, {
             createClient() {
-              return client as any;
+              return client;
             },
             prefix: config.BULL_PREFIX,
           }),
