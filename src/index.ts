@@ -150,7 +150,7 @@ if (config.METRICS_ENABLED) {
       const allMetrics: string[] = [];
       for (const [name, queue] of queueMap.entries()) {
         if (queue instanceof Queue) {
-          const metrics = await queue.exportPrometheusMetrics();
+          const metrics = await queue.exportPrometheusMetrics(config.METRICS_VARS);
           allMetrics.push(metrics);
         }
       }
@@ -179,7 +179,7 @@ if (config.METRICS_ENABLED) {
       }
 
       if (queue instanceof Queue) {
-        const metrics = await queue.exportPrometheusMetrics();
+        const metrics = await queue.exportPrometheusMetrics(config.METRICS_VARS);
         res.set('Content-Type', 'text/plain');
         res.send(metrics);
       } else {

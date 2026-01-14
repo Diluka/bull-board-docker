@@ -6,6 +6,17 @@ function normalizePath(pathStr?: string) {
   return (pathStr || '').replace(/\/$/, '');
 }
 
+function getMetricsVars(): Record<string, string> {
+  const metricsVars: Record<string, string> = {};
+  for (const [key, value] of Object.entries(process.env)) {
+    if (key.startsWith('METRICS_VAR_') && value) {
+      const varName = key.replace(/^METRICS_VAR_/, '');
+      metricsVars[varName] = value;
+    }
+  }
+  return metricsVars;
+}
+
 const PROXY_PATH = normalizePath(process.env.PROXY_PATH);
 const HOME_PAGE = '/';
 const LOGIN_PAGE = '/login';
@@ -20,6 +31,7 @@ export default {
   BULL_PREFIX: process.env.BULL_PREFIX || 'bull',
   BULL_VERSION: process.env.BULL_VERSION || 'BULLMQ',
   METRICS_ENABLED: process.env.METRICS_ENABLED === 'true',
+  METRICS_VARS: getMetricsVars(),
   PORT: parseInt(process.env.PORT || '3000'),
   PROXY_PATH,
   USER_LOGIN: process.env.USER_LOGIN,
