@@ -140,18 +140,9 @@ app.use(passport.initialize());
 app.use(passport.session());
 app.use(express.urlencoded({ extended: true }));
 
-if (config.AUTH_ENABLED) {
-  app.use(config.LOGIN_PAGE, authRouter);
-  app.use(config.HOME_PAGE, ensureLoggedIn(config.PROXY_LOGIN_PAGE), router);
-} else {
-  app.use(config.HOME_PAGE, router);
-}
-
-// Prometheus metrics endpoint
+// Prometheus metrics endpoint - must be defined BEFORE ensureLoggedIn middleware
 if (config.METRICS_ENABLED) {
-  const metricsAuth: RequestHandler = config.AUTH_ENABLED
-    ? passport.authenticate('basic', { session: false })
-    : (_req, _res, next) => next();
+  const metricsAuth: RequestHandler = config.AUTH_ENABLED ? passport.authenticate('basic') : (_req, _res, next) => next();
 
   // All queues metrics
   app.get(`${config.PROXY_PATH}/metrics`, metricsAuth, async (req, res) => {
@@ -198,6 +189,13 @@ if (config.METRICS_ENABLED) {
       res.status(500).send(`Error: ${err instanceof Error ? err.message : 'Unknown error'}`);
     }
   });
+}
+
+if (config.AUTH_ENABLED) {
+  app.use(config.LOGIN_PAGE, authRouter);
+  app.use(config.HOME_PAGE, ensureLoggedIn(config.PROXY_LOGIN_PAGE), router);
+} else {
+  app.use(config.HOME_PAGE, router);
 }
 
 let updateQueuesInterval: NodeJS.Timeout | null = null;
