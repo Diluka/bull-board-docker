@@ -151,7 +151,7 @@ if (config.AUTH_ENABLED) {
 if (config.METRICS_ENABLED) {
   const metricsAuth = config.AUTH_ENABLED
     ? passport.authenticate('basic', { session: false })
-    // @ts-expect-error
+    // @ts-expect-error empty handler
     : (req, res, next) => next();
 
   // All queues metrics
