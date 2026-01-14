@@ -9,7 +9,7 @@ yarn-error.log*
 node_modules/
 jspm_packages/
 
-.vscode/
+.vscode/*
 !.vscode/settings.json
 !.vscode/extensions.json
 .claude/
