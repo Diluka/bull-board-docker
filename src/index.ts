@@ -69,12 +69,12 @@ async function updateQueues(): Promise<void> {
         queueName,
         isBullMQ()
           ? new Queue(queueName, {
-            connection: client,
+            connection: client as any,
             prefix: config.BULL_PREFIX,
           })
           : new LegacyQueue(queueName, {
             createClient() {
-              return client;
+              return client as any;
             },
             prefix: config.BULL_PREFIX,
           }),
