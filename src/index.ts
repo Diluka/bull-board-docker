@@ -149,8 +149,13 @@ if (config.AUTH_ENABLED) {
 
 // Prometheus metrics endpoint
 if (config.METRICS_ENABLED) {
+  const metricsAuth = config.AUTH_ENABLED
+    ? passport.authenticate('basic', { session: false })
+    // @ts-expect-error
+    : (req, res, next) => next();
+
   // All queues metrics
-  app.get(`${config.PROXY_PATH}/metrics`, async (req, res) => {
+  app.get(`${config.PROXY_PATH}/metrics`, metricsAuth, async (req, res) => {
     try {
       const allMetrics: string[] = [];
       for (const [name, queue] of queueMap.entries()) {
@@ -173,7 +178,7 @@ if (config.METRICS_ENABLED) {
   });
 
   // Specific queue metrics
-  app.get(`${config.PROXY_PATH}/metrics/:queueName`, async (req, res) => {
+  app.get(`${config.PROXY_PATH}/metrics/:queueName`, metricsAuth, async (req, res) => {
     try {
       const { queueName } = req.params;
       const queue = queueMap.get(queueName);

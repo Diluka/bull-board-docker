@@ -24,9 +24,10 @@
     "dotenv": "^16.6.1",
     "express": "^5.2.1",
     "express-session": "^1.18.2",
-    "ioredis": "~5.8.0",
+    "ioredis": "~5.8.2",
     "morgan": "^1.10.1",
     "passport": "^0.7.0",
+    "passport-http": "^0.3.0",
     "passport-local": "^1.0.0"
   },
   "devDependencies": {
@@ -36,6 +37,7 @@
     "@types/morgan": "^1.9.10",
     "@types/node": "^24.10.8",
     "@types/passport": "^1.0.17",
+    "@types/passport-http": "^0.3.11",
     "@types/passport-local": "^1.0.38"
   }
 }

@@ -1,5 +1,6 @@
 import express from 'express';
 import passport from 'passport';
+import { BasicStrategy } from 'passport-http';
 import { Strategy as LocalStrategy } from 'passport-local';
 import config from './config.ts';
 
@@ -7,6 +8,16 @@ export const authRouter = express.Router();
 
 passport.use(
   new LocalStrategy((username, password, cb) => {
+    if (username === config.USER_LOGIN && password === config.USER_PASSWORD) {
+      return cb(null, { user: 'bull-board' });
+    }
+
+    return cb(null, false);
+  }),
+);
+
+passport.use(
+  new BasicStrategy((username, password, cb) => {
     if (username === config.USER_LOGIN && password === config.USER_PASSWORD) {
       return cb(null, { user: 'bull-board' });
     }
