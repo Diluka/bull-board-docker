@@ -7,7 +7,7 @@
   "private": true,
   "scripts": {
     "start": "deno run -A src/index.ts",
-    "dev": "deno run -A --watch src/index.ts",
+    "dev": "deno run -A --watch --env-file src/index.ts",
     "pretest": "npm run test:stack:up",
     "test": "docker compose -f docker-compose.test.yml run --rm sut",
     "posttest": "npm run test:stack:down",

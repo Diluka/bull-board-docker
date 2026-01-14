@@ -19,6 +19,7 @@ export default {
   REDIS_IS_CLUSTER: process.env.REDIS_IS_CLUSTER,
   BULL_PREFIX: process.env.BULL_PREFIX || 'bull',
   BULL_VERSION: process.env.BULL_VERSION || 'BULLMQ',
+  METRICS_ENABLED: process.env.METRICS_ENABLED === 'true',
   PORT: parseInt(process.env.PORT || '3000'),
   PROXY_PATH,
   USER_LOGIN: process.env.USER_LOGIN,

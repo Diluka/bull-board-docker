@@ -52,16 +52,23 @@ const router = serverAdapter.getRouter();
 
 const queueMap = new Map<string, Queue | BullQueue>();
 
-async function updateQueues(): Promise<void> {
+async function getQueueNames(): Promise<string[]> {
   const isBullMQ = (): boolean => config.BULL_VERSION === 'BULLMQ';
-  const keys = await client.keys(`${config.BULL_PREFIX}:*:id`);
+  const suffix = isBullMQ() ? 'meta' : 'id';
+  const keys = await client.keys(`${config.BULL_PREFIX}:*:${suffix}`);
   const uniqKeys = new Set(
     keys
       // ':' may contain in BULL_PREFIX
       .map((key: string) => key.replace(config.BULL_PREFIX, 'bull'))
-      .map((key: string) => key.replace(/^.+?:(.+?):id$/, '$1')),
+      .map((key: string) => key.replace(new RegExp(`^.+?:(.+?):${suffix}$`), '$1')),
   );
   const actualQueues = Array.from(uniqKeys).sort();
+  return actualQueues;
+}
+
+async function updateQueues(): Promise<void> {
+  const isBullMQ = (): boolean => config.BULL_VERSION === 'BULLMQ';
+  const actualQueues = await getQueueNames();
 
   for (const queueName of actualQueues) {
     if (!queueMap.has(queueName)) {
@@ -138,6 +145,55 @@ if (config.AUTH_ENABLED) {
   app.use(config.HOME_PAGE, ensureLoggedIn(config.PROXY_LOGIN_PAGE), router);
 } else {
   app.use(config.HOME_PAGE, router);
+}
+
+// Prometheus metrics endpoint
+if (config.METRICS_ENABLED) {
+  // All queues metrics
+  app.get(`${config.PROXY_PATH}/metrics`, async (req, res) => {
+    try {
+      const allMetrics: string[] = [];
+      for (const [name, queue] of queueMap.entries()) {
+        if (queue instanceof Queue) {
+          const metrics = await queue.exportPrometheusMetrics();
+          allMetrics.push(metrics);
+        }
+      }
+
+      if (allMetrics.length === 0) {
+        res.status(404).send('No BullMQ queues found');
+        return;
+      }
+
+      res.set('Content-Type', 'text/plain');
+      res.send(allMetrics.join('\n'));
+    } catch (err) {
+      res.status(500).send(`Error: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    }
+  });
+
+  // Specific queue metrics
+  app.get(`${config.PROXY_PATH}/metrics/:queueName`, async (req, res) => {
+    try {
+      const { queueName } = req.params;
+      const queue = queueMap.get(queueName);
+
+      if (!queue) {
+        res.status(404).send(`Queue "${queueName}" not found`);
+        return;
+      }
+
+      if (queue instanceof Queue) {
+        const metrics = await queue.exportPrometheusMetrics();
+        res.set('Content-Type', 'text/plain');
+        res.send(metrics);
+      } else {
+        res.status(400).send('Metrics only available for BullMQ queues');
+      }
+    } catch (err) {
+      res.status(500).send(`Error: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    }
+  });
 }
 
 let updateQueuesInterval: NodeJS.Timeout | null = null;
