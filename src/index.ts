@@ -149,7 +149,9 @@ if (config.AUTH_ENABLED) {
 
 // Prometheus metrics endpoint
 if (config.METRICS_ENABLED) {
-  const metricsAuth: RequestHandler = config.AUTH_ENABLED ? passport.authenticate('basic', { session: false }) : (req, res, next) => next();
+  const metricsAuth: RequestHandler = config.AUTH_ENABLED
+    ? passport.authenticate('basic', { session: false })
+    : (_req, _res, next) => next();
 
   // All queues metrics
   app.get(`${config.PROXY_PATH}/metrics`, metricsAuth, async (req, res) => {
