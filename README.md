@@ -42,11 +42,52 @@ see "Example with docker-compose" section for example with env parameters
 - `PROXY_PATH` - proxyPath for bull board, e.g. https://<server_name>/my-base-path/queues [docs] ('' by default)
 - `USER_LOGIN` - login to restrict access to bull-board interface (disabled by default)
 - `USER_PASSWORD` - password to restrict access to bull-board interface (disabled by default)
+- `METRICS_ENABLED` - enable Prometheus metrics endpoint (disabled by default)
+- `METRICS_VAR_*` - custom labels for Prometheus metrics (e.g., `METRICS_VAR_env=production`, `METRICS_VAR_server=1`)
 
 ### Restrict access with login and password
 
 To restrict access to bull-board use `USER_LOGIN` and `USER_PASSWORD` env vars.
 Only when both `USER_LOGIN` and `USER_PASSWORD` specified, access will be restricted with login/password
+
+### Prometheus Metrics
+
+Enable Prometheus metrics endpoint with `METRICS_ENABLED=true`. This requires BullMQ queues (not supported for Bull v3).
+
+**Endpoints:**
+- `GET /metrics` - Prometheus metrics for all queues
+- `GET /metrics/{queueName}` - Prometheus metrics for a specific queue
+
+**Authentication:**
+When `USER_LOGIN` and `USER_PASSWORD` are set, metrics endpoints require HTTP Basic Authentication:
+```bash
+curl -u username:password http://localhost:3000/metrics
+```
+
+**Custom Labels:**
+Add custom labels to metrics using `METRICS_VAR_*` environment variables:
+```
+METRICS_VAR_env=production
+METRICS_VAR_server=1
+METRICS_VAR_region=us-east-1
+```
+
+These will be included in the metrics output:
+```
+bullmq_job_count{queue="my-queue", state="waiting", env="production", server="1", region="us-east-1"} 5
+```
+
+**Prometheus Configuration Example:**
+```yaml
+scrape_configs:
+  - job_name: 'bull-board'
+    basic_auth:
+      username: 'your-username'
+      password: 'your-password'
+    static_configs:
+      - targets: ['localhost:3000']
+    metrics_path: '/metrics'
+```
 
 ### Example with docker-compose
 
@@ -75,6 +116,9 @@ services:
       REDIS_PASSWORD: example-password
       REDIS_USE_TLS: 'false'
       BULL_PREFIX: bull
+      METRICS_ENABLED: 'true'
+      METRICS_VAR_env: production
+      METRICS_VAR_server: '1'
     depends_on:
       - redis
 
