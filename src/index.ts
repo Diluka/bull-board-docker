@@ -166,7 +166,7 @@ if (config.METRICS_ENABLED) {
   });
 
   // Specific queue metrics
-  app.get(`${config.PROXY_PATH}/metrics/:queueName`, metricsAuth, async (req, res) => {
+  app.get<{ queueName: string }>(`${config.PROXY_PATH}/metrics/:queueName`, metricsAuth, async (req, res) => {
     try {
       const { queueName } = req.params;
       const queue = queueMap.get(queueName);
