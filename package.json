@@ -8,6 +8,7 @@
   "scripts": {
     "start": "deno run -A src/index.ts",
     "dev": "deno run -A --watch --env-file src/index.ts",
+    "test:unit": "deno test -A src/",
     "pretest": "npm run test:stack:up",
     "test": "docker compose -f docker-compose.test.yml run --rm sut",
     "posttest": "npm run test:stack:down",
@@ -22,6 +23,7 @@
     "bullmq": "^5.66.5",
     "connect-ensure-login": "^0.1.1",
     "dotenv": "^16.6.1",
+    "ejs": "^3.1.10",
     "express": "^5.2.1",
     "express-session": "^1.18.2",
     "ioredis": "~5.8.2",

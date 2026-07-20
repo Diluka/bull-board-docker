@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Pipeline runs | Bull Dashboard</title>
+    <link
+      rel="stylesheet"
+      href="<%= proxyPath %>/pipeline-assets/pipeline-dashboard.css"
+    />
+    <script
+      defer
+      src="<%= proxyPath %>/pipeline-assets/pipeline-dashboard.js"
+    ></script>
+  </head>
+  <body>
+    <header class="app-header">
+      <a class="brand" href="<%= proxyPath %>/">
+        <span class="brand-mark" aria-hidden="true">B</span>
+        <span>Bull Dashboard</span>
+      </a>
+      <nav class="primary-nav" aria-label="Dashboard sections">
+        <a href="<%= proxyPath %>/">Queues</a>
+        <a class="active" href="<%= proxyPath %>/pipelines" aria-current="page">
+          Pipelines
+        </a>
+      </nav>
+    </header>
+
+    <main
+      id="pipeline-dashboard"
+      class="page-shell"
+      data-page="<%= page %>"
+      data-run-id="<%= runId %>"
+      data-base-path="<%= proxyPath %>"
+    >
+      <div class="loading" role="status">
+        <span class="loading-bar" aria-hidden="true"></span>
+        Loading pipeline data
+      </div>
+    </main>
+  </body>
+</html>

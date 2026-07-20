@@ -37,6 +37,9 @@ jobs:
         run: deno fmt --check src/
 
       - name: Test
+        run: deno task test:unit
+
+      - name: Test Docker image
         run: deno task test
 
   publish_next:

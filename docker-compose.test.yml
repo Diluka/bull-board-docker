@@ -1,8 +1,17 @@
 services:
   nginx:
     build: ./test/nginx
+    ports:
+      - "127.0.0.1::80"
   redis:
     image: redis:alpine
+  pipeline-fixture:
+    image: redis:alpine
+    volumes:
+      - ./test/seed-pipeline.sh:/test/seed-pipeline.sh:ro
+    entrypoint: ['/bin/sh', '/test/seed-pipeline.sh']
+    depends_on:
+      - redis
   bull-board:
     build: .
     environment:
@@ -10,11 +19,17 @@ services:
       PROXY_PATH: /app/bull-board/
       PORT: 80
       NODE_ENV: test
+      USER_LOGIN: test-user
+      USER_PASSWORD: test-password
     depends_on:
-      - redis
-      - nginx
+      nginx:
+        condition: service_started
+      pipeline-fixture:
+        condition: service_completed_successfully
   sut: # docker hub test entry
     image: curlimages/curl
-    command: -sSL --retry 3 --retry-connrefused http://nginx/app/bull-board
+    volumes:
+      - ./test/sut.sh:/test/sut.sh:ro
+    entrypoint: ['/bin/sh', '/test/sut.sh']
     depends_on:
       - bull-board

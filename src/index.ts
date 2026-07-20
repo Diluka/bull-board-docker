@@ -14,6 +14,8 @@ import passport from 'passport';
 
 import config from './config.ts';
 import { authRouter } from './login.ts';
+import { PipelineRunRepository } from './pipeline/pipeline-run.repository.ts';
+import { createPipelineRouter } from './pipeline/pipeline.router.ts';
 
 const redisConfig = {
   port: config.REDIS_PORT,
@@ -44,6 +46,15 @@ function createRedisClient(): Redis | Cluster {
 
 const serverAdapter = new ExpressAdapter();
 const client = createRedisClient();
+serverAdapter.setBasePath(config.PROXY_PATH);
+serverAdapter.setUIConfig({
+  miscLinks: [
+    {
+      text: 'Pipelines',
+      url: `${config.PROXY_PATH}/pipelines`,
+    },
+  ],
+});
 const { replaceQueues, removeQueue } = createBullBoard({
   queues: [],
   serverAdapter,
@@ -109,8 +120,6 @@ async function updateQueues(): Promise<void> {
 }
 
 await updateQueues();
-
-serverAdapter.setBasePath(config.PROXY_PATH);
 
 const app = express();
 
@@ -191,11 +200,24 @@ if (config.METRICS_ENABLED) {
   });
 }
 
+const protectedRouter = express.Router();
+protectedRouter.use(
+  createPipelineRouter({
+    proxyPath: config.PROXY_PATH,
+    repository: new PipelineRunRepository(client),
+  }),
+);
+protectedRouter.use(router);
+
 if (config.AUTH_ENABLED) {
   app.use(config.LOGIN_PAGE, authRouter);
-  app.use(config.HOME_PAGE, ensureLoggedIn(config.PROXY_LOGIN_PAGE), router);
+  app.use(
+    config.HOME_PAGE,
+    ensureLoggedIn(config.PROXY_LOGIN_PAGE),
+    protectedRouter,
+  );
 } else {
-  app.use(config.HOME_PAGE, router);
+  app.use(config.HOME_PAGE, protectedRouter);
 }
 
 let updateQueuesInterval: NodeJS.Timeout | null = null;

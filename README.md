@@ -30,6 +30,27 @@ will run bull-board interface on `localhost:3000` and connect to your redis inst
 
 see "Example with docker-compose" section for example with env parameters
 
+### Pietra Pipeline Dashboard
+
+The image also provides a read-only dashboard for distributed Pietra Pipeline runs. Open `/pipelines`, or use the `Pipelines` link in Bull Board. The page uses the same Redis connection, login protection, and `PROXY_PATH` as the queue dashboard.
+
+![Pipeline run list](docs/images/pipeline-runs.png)
+
+The run page groups nodes by graph depth, Pipeline, and step. It shows parent-child edges, status, attempts, progress, Invocation and Scope IDs, and links each node back to its BullMQ job.
+
+![Pipeline run graph](docs/images/pipeline-run.png)
+
+The dashboard reads these Pipeline snapshots without changing them:
+
+```text
+pietra:pipeline:runs
+pietra:pipeline:run:{runId}
+pietra:pipeline:run:{runId}:nodes
+pietra:pipeline:run:{runId}:node:{nodeId}
+```
+
+JSON endpoints are available at `/api/pipelines` and `/api/pipelines/{runId}`. Finished snapshots follow the Pipeline runtime's 24-hour retention; active runs remain visible until they settle.
+
 ### Environment variables
 
 - `REDIS_HOST` - host to connect to redis (localhost by default)
