@@ -76,11 +76,9 @@ async function updateQueues(): Promise<void> {
         queueName,
         isBullMQ()
           ? new Queue(queueName, {
-            // @ts-expect-error - ioredis version mismatch between bull and current version
             connection: client,
             prefix: config.BULL_PREFIX,
           })
-          // @ts-expect-error - ioredis version mismatch between bull and current version
           : new LegacyQueue(queueName, {
             createClient() {
               return client;
@@ -168,7 +166,7 @@ if (config.METRICS_ENABLED) {
   });
 
   // Specific queue metrics
-  app.get(`${config.PROXY_PATH}/metrics/:queueName`, metricsAuth, async (req, res) => {
+  app.get<{ queueName: string }>(`${config.PROXY_PATH}/metrics/:queueName`, metricsAuth, async (req, res) => {
     try {
       const { queueName } = req.params;
       const queue = queueMap.get(queueName);
