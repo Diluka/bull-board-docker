@@ -1,4 +1,7 @@
 {
+  "imports": {
+    "bull-board-docker/extensions": "./src/extensions/api.ts"
+  },
   "lint": {
     "rules": {
       "tags": [

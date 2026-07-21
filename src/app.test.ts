@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import express, { type RequestHandler, type Router } from 'express';
 
-import type { ExtensionLifecycle, ExtensionLoaderDependencies } from './extensions/loader.ts';
+import type { ExtensionContext } from './extensions/api.ts';
 import { createApplication } from './app.ts';
+import { prepareExtensions } from './extensions/loader.ts';
 
 function testConfig(overrides: Record<string, unknown> = {}) {
   return {
@@ -47,7 +48,7 @@ async function request(app: express.Express, path: string): Promise<Response> {
   }
 }
 
-Deno.test('application refreshes before extensions and creates Bull Board once with collected links', async () => {
+Deno.test('application imports before refresh, activates serially, creates Bull Board, then mounts extension and Board routers', async () => {
   const events: string[] = [];
   const initialAdapters = [{ adapter: 'one' }];
   const queues = {
@@ -60,6 +61,12 @@ Deno.test('application refreshes before extensions and creates Bull Board once w
   };
   const boardRouter = express.Router();
   boardRouter.get('/', (_req, res) => res.send('board'));
+  const protectedRouter = express.Router();
+  const useProtectedRouter = protectedRouter.use.bind(protectedRouter) as (...args: unknown[]) => Router;
+  protectedRouter.use = ((...args: unknown[]) => {
+    events.push(typeof args[0] === 'string' ? `mount:${args[0]}` : 'mount:board');
+    return useProtectedRouter(...args);
+  }) as typeof protectedRouter.use;
   const serverAdapter = {
     setBasePath(path: string) {
       events.push(`base:${path}`);
@@ -68,19 +75,44 @@ Deno.test('application refreshes before extensions and creates Bull Board once w
   };
   let boardOptions: Record<string, unknown> | undefined;
   let boardCreations = 0;
-  const lifecycle: ExtensionLifecycle = { dispose: () => Promise.resolve() };
 
   const result = await createApplication(
     { config: testConfig(), redis: {} as never, queues, serverAdapter },
     runtimeOverrides({
-      loadExtensions(dependencies: ExtensionLoaderDependencies) {
-        events.push('extensions');
-        const router = express.Router();
-        router.get('/hello', (_req, res) => res.send('extension'));
-        dependencies.mountRouter('/ext/demo', router);
-        dependencies.addMiscLink({ text: 'Demo', url: '/proxy/ext/demo/hello' });
-        return Promise.resolve(lifecycle);
+      prepareExtensions() {
+        const modules = new Map([
+          ['npm:demo', {
+            default: {
+              id: 'demo',
+              apiVersion: 1,
+              activate(context: { router: Router; addLink(link: { text: string; path: `/${string}` }): void }) {
+                events.push('activate:demo');
+                context.router.get('/hello', (_req, res) => res.send('extension'));
+                context.addLink({ text: 'Demo', path: '/hello' });
+              },
+            },
+          }],
+          ['npm:second', {
+            default: {
+              id: 'second',
+              apiVersion: 1,
+              activate() {
+                events.push('activate:second');
+              },
+            },
+          }],
+        ]);
+        return prepareExtensions(
+          {
+            importModule(specifier) {
+              events.push(`import:${specifier}`);
+              return Promise.resolve(modules.get(specifier));
+            },
+          },
+          '["npm:demo", "npm:second"]',
+        );
       },
+      createProtectedRouter: () => protectedRouter,
       createBullBoard(options: Record<string, unknown>) {
         boardCreations++;
         events.push('board');
@@ -90,19 +122,125 @@ Deno.test('application refreshes before extensions and creates Bull Board once w
     }),
   );
 
-  assert.deepEqual(events, ['refresh', 'extensions', 'base:/proxy', 'board']);
+  assert.deepEqual(events, [
+    'import:npm:demo',
+    'import:npm:second',
+    'refresh',
+    'activate:demo',
+    'activate:second',
+    'base:/proxy',
+    'board',
+    'mount:/ext/demo',
+    'mount:/ext/second',
+    'mount:board',
+  ]);
   assert.equal(boardCreations, 1);
   assert.equal(boardOptions?.queues, initialAdapters);
   assert.deepEqual(boardOptions?.options, { uiConfig: { miscLinks: [{ text: 'Demo', url: '/proxy/ext/demo/hello' }] } });
-  assert.equal(result.extensionLifecycle, lifecycle);
+  const miscLinks = (boardOptions?.options as { uiConfig: { miscLinks: unknown[] } }).uiConfig.miscLinks;
+  assert.ok(Object.isFrozen(miscLinks));
   assert.equal(await (await request(result.app, '/ext/demo/hello')).text(), 'extension');
   assert.equal((await request(result.app, '/proxy/ext/demo/hello')).status, 404);
   assert.equal(await (await request(result.app, '/')).text(), 'board');
 });
 
+Deno.test('application does not refresh queues or activate when a later extension import fails', async () => {
+  let refreshCalls = 0;
+  let activateCalls = 0;
+  await assert.rejects(
+    () =>
+      createApplication(
+        {
+          config: testConfig(),
+          redis: {} as never,
+          queues: {
+            list: () => [],
+            get: () => undefined,
+            refresh: () => {
+              refreshCalls++;
+              return Promise.resolve([]);
+            },
+          },
+          serverAdapter: { setBasePath: () => {}, getRouter: () => express.Router() },
+        },
+        runtimeOverrides({
+          prepareExtensions: () =>
+            prepareExtensions(
+              {
+                importModule: (specifier) =>
+                  specifier === 'npm:first'
+                    ? Promise.resolve({
+                      default: {
+                        id: 'first',
+                        apiVersion: 1,
+                        activate: () => {
+                          activateCalls++;
+                        },
+                      },
+                    })
+                    : Promise.reject(new Error('later import failed')),
+              },
+              '["npm:first", "npm:missing"]',
+            ),
+        }),
+      ),
+    /later import failed/,
+  );
+
+  assert.equal(refreshCalls, 0);
+  assert.equal(activateCalls, 0);
+});
+
+Deno.test('application does not refresh queues or activate when a later contract or duplicate id check fails', async () => {
+  for (const failure of ['contract', 'duplicate'] as const) {
+    let refreshCalls = 0;
+    let activateCalls = 0;
+    const first = {
+      default: {
+        id: 'first',
+        apiVersion: 1,
+        activate: () => {
+          activateCalls++;
+        },
+      },
+    };
+    const second = failure === 'contract'
+      ? { default: { id: 'second', apiVersion: 2, activate: () => {} } }
+      : { default: { id: 'first', apiVersion: 1, activate: () => {} } };
+
+    await assert.rejects(
+      () =>
+        createApplication(
+          {
+            config: testConfig(),
+            redis: {} as never,
+            queues: {
+              list: () => [],
+              get: () => undefined,
+              refresh: () => {
+                refreshCalls++;
+                return Promise.resolve([]);
+              },
+            },
+            serverAdapter: { setBasePath: () => {}, getRouter: () => express.Router() },
+          },
+          runtimeOverrides({
+            prepareExtensions: () =>
+              prepareExtensions({
+                importModule: (specifier) => Promise.resolve(specifier === 'npm:first' ? first : second),
+              }, '["npm:first", "npm:second"]'),
+          }),
+        ),
+      failure === 'contract' ? /apiVersion 1/ : /Duplicate extension id "first"/,
+    );
+
+    assert.equal(refreshCalls, 0, `${failure} failure refreshed queues`);
+    assert.equal(activateCalls, 0, `${failure} failure activated an extension`);
+  }
+});
+
 Deno.test('metrics and login use internal paths before authentication while extensions stay protected', async () => {
   const extensionRouter = express.Router();
-  extensionRouter.get('/hello', (_req, res) => res.send('extension'));
   const loginRouter = express.Router();
   loginRouter.get('/', (_req, res) => res.send('login'));
   const deny: RequestHandler = (_req, res) => {
@@ -124,10 +262,20 @@ Deno.test('metrics and login use internal paths before authentication while exte
     runtimeOverrides({
       authRouter: loginRouter,
       ensureLoggedIn: () => deny,
-      loadExtensions: (dependencies: ExtensionLoaderDependencies) => {
-        dependencies.mountRouter('/ext/demo', extensionRouter);
-        return Promise.resolve({ dispose: () => Promise.resolve() });
-      },
+      prepareExtensions: () =>
+        prepareExtensions({
+          createRouter: () => extensionRouter,
+          importModule: () =>
+            Promise.resolve({
+              default: {
+                id: 'demo',
+                apiVersion: 1,
+                activate(context: ExtensionContext) {
+                  context.router.get('/hello', (_req, res) => res.send('extension'));
+                },
+              },
+            }),
+        }, '["npm:demo"]'),
       createBullBoard: () => ({ replaceQueues: () => {} }),
     }),
   );
@@ -151,13 +299,19 @@ Deno.test('application disposes activated extensions when later assembly fails',
           serverAdapter: { setBasePath: () => {}, getRouter: () => express.Router() },
         },
         runtimeOverrides({
-          loadExtensions: () =>
-            Promise.resolve({
-              dispose: () => {
-                events.push('dispose');
-                return Promise.resolve();
-              },
-            }),
+          prepareExtensions: () =>
+            prepareExtensions({
+              importModule: () =>
+                Promise.resolve({
+                  default: {
+                    id: 'demo',
+                    apiVersion: 1,
+                    activate: () => () => {
+                      events.push('dispose');
+                    },
+                  },
+                }),
+            }, '["npm:demo"]'),
           createBullBoard: () => {
             throw new Error('board failed');
           },

@@ -8,7 +8,7 @@ import type { Cluster, Redis } from 'ioredis';
 import passport from 'passport';
 
 import type { ExtensionQueues } from './extensions/api.ts';
-import { type ExtensionLifecycle, loadExtensions as loadDefaultExtensions } from './extensions/loader.ts';
+import { type ExtensionLifecycle, prepareExtensions as prepareDefaultExtensions } from './extensions/loader.ts';
 import { authRouter as defaultAuthRouter } from './login.ts';
 
 export interface ApplicationConfig {
@@ -39,11 +39,12 @@ export interface ApplicationOptions {
 interface BoardOptions {
   queues: readonly unknown[];
   serverAdapter: ApplicationServerAdapter;
-  options: { uiConfig: { miscLinks: IMiscLink[] } };
+  options: { uiConfig: { miscLinks: readonly IMiscLink[] } };
 }
 
 interface ApplicationRuntime {
-  loadExtensions: typeof loadDefaultExtensions;
+  prepareExtensions: typeof prepareDefaultExtensions;
+  createProtectedRouter(): Router;
   createBullBoard(options: BoardOptions): { replaceQueues(queues: readonly unknown[]): void };
   ensureLoggedIn(redirectTo: string): RequestHandler;
   authRouter: Router;
@@ -63,7 +64,8 @@ export async function createApplication(
   overrides: Partial<ApplicationRuntime> = {},
 ): Promise<CreatedApplication> {
   const runtime: ApplicationRuntime = {
-    loadExtensions: loadDefaultExtensions,
+    prepareExtensions: prepareDefaultExtensions,
+    createProtectedRouter: () => express.Router(),
     createBullBoard: (boardOptions) => {
       const result = createDefaultBullBoard(boardOptions as unknown as Parameters<typeof createDefaultBullBoard>[0]);
       return { replaceQueues: (queues) => result.replaceQueues(queues as Parameters<typeof result.replaceQueues>[0]) };
@@ -75,15 +77,12 @@ export async function createApplication(
     ...overrides,
   };
 
+  const preparedExtensions = await runtime.prepareExtensions();
   const initialAdapters = await options.queues.refresh();
-  const protectedRouter = express.Router();
-  const miscLinks: IMiscLink[] = [];
-  const extensionLifecycle = await runtime.loadExtensions({
+  const extensionLifecycle = await preparedExtensions.activate({
     redis: options.redis,
     queues: options.queues,
     proxyPath: options.config.PROXY_PATH,
-    mountRouter: (path, router) => protectedRouter.use(path, router),
-    addMiscLink: (link) => miscLinks.push(link),
   });
 
   try {
@@ -91,8 +90,10 @@ export async function createApplication(
     const { replaceQueues } = runtime.createBullBoard({
       queues: initialAdapters,
       serverAdapter: options.serverAdapter,
-      options: { uiConfig: { miscLinks } },
+      options: { uiConfig: { miscLinks: extensionLifecycle.miscLinks } },
     });
+    const protectedRouter = runtime.createProtectedRouter();
+    extensionLifecycle.mountRouters((path, router) => protectedRouter.use(path, router));
     protectedRouter.use(options.serverAdapter.getRouter());
 
     const app = express();

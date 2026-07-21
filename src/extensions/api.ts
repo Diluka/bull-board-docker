@@ -29,7 +29,7 @@ export interface ExtensionContext {
 export type ExtensionDisposer = () => void | Promise<void>;
 
 export interface BullBoardExtension {
-  id: string;
-  apiVersion: 1;
-  activate(context: ExtensionContext, options: JsonValue | undefined): void | ExtensionDisposer | Promise<void | ExtensionDisposer>;
+  readonly id: string;
+  readonly apiVersion: 1;
+  activate(context: ExtensionContext, options: unknown): void | ExtensionDisposer | Promise<void | ExtensionDisposer>;
 }

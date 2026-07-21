@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-import type { ExtensionContext, JsonValue } from './api.ts';
+import type { ExtensionContext } from './api.ts';
 import { loadExtensions, parseExtensionConfig, resolveExtensionSpecifier } from './loader.ts';
 
 Deno.test('treats missing, blank, and empty extension configuration as empty', () => {
@@ -34,10 +34,19 @@ Deno.test('validates the complete extension configuration without exposing optio
 });
 
 Deno.test('identifies an invalid entry by index and its supplied specifier', () => {
-  assert.throws(
-    () => parseExtensionConfig('[{"specifier":""}]'),
-    /index 0 \(\)/,
-  );
+  for (
+    const [configuration, diagnostic] of [
+      ['[""]', 'index 0 ("")'],
+      ['["   "]', 'index 0 ("   ")'],
+      ['[{"specifier":""}]', 'index 0 ("")'],
+      ['[{"specifier":" \\t "}]', 'index 0 (" \\t ")'],
+    ] as const
+  ) {
+    assert.throws(
+      () => parseExtensionConfig(configuration),
+      (error) => error instanceof Error && error.message.includes(diagnostic),
+    );
+  }
 });
 
 Deno.test('parses string and object extension entries', () => {
@@ -59,6 +68,23 @@ Deno.test('resolves relative, absolute, file URL, and directory specifiers to ca
   assert.equal(await resolveExtensionSpecifier(file, cwd), pathToFileURL(file).href);
   assert.equal(await resolveExtensionSpecifier(pathToFileURL(file).href, cwd), pathToFileURL(file).href);
   assert.equal(await resolveExtensionSpecifier('./directory', cwd), pathToFileURL(join(directory, 'mod.ts')).href);
+});
+
+Deno.test('resolves uppercase FILE URLs through the file URL path', async () => {
+  const cwd = await Deno.makeTempDir();
+  const file = join(cwd, 'extension.ts');
+  await Deno.writeTextFile(file, 'export default {}');
+  const uppercaseFileUrl = pathToFileURL(file).href.replace(/^file:/, 'FILE:');
+
+  assert.equal(await resolveExtensionSpecifier(uppercaseFileUrl, cwd), pathToFileURL(file).href);
+});
+
+Deno.test('does not confuse a file-prefixed relative path with the file URL scheme', async () => {
+  const cwd = await Deno.makeTempDir();
+  const file = join(cwd, 'fileX');
+  await Deno.writeTextFile(file, 'export default {}');
+
+  assert.equal(await resolveExtensionSpecifier('fileX', cwd), pathToFileURL(file).href);
 });
 
 Deno.test('resolves symlinked extension targets when supported', async () => {
@@ -130,22 +156,99 @@ Deno.test('loads defaults only, validates their contract, and rejects duplicate 
   );
 });
 
+Deno.test('imports and validates every extension before activating any extension', async () => {
+  const activations: string[] = [];
+  await assert.rejects(
+    () =>
+      loadExtensions(
+        dependencies({
+          importModule: (specifier: string) => {
+            if (specifier === 'npm:first') {
+              return Promise.resolve({
+                default: {
+                  id: 'first',
+                  apiVersion: 1,
+                  activate: () => {
+                    activations.push('first');
+                  },
+                },
+              });
+            }
+            return Promise.reject(new Error('later import failed'));
+          },
+        }),
+        '["npm:first", "npm:missing"]',
+      ),
+    /later import failed/,
+  );
+  assert.deepEqual(activations, []);
+});
+
+Deno.test('snapshots validated identity and activation callable before activation side effects', async () => {
+  const events: string[] = [];
+  const mounts: string[] = [];
+  const links: unknown[] = [];
+  const second = {
+    id: 'real',
+    apiVersion: 1,
+    activate() {
+      events.push('original-second');
+    },
+  };
+  const first = {
+    id: 'mutator',
+    apiVersion: 1,
+    activate(this: { id: string }, context: ExtensionContext) {
+      events.push('first');
+      this.id = 'real';
+      second.activate = () => {
+        events.push('mutated-second');
+      };
+      context.addLink({ text: 'Mutator', path: '/' });
+    },
+  };
+  const modules = new Map([
+    ['npm:first', { default: first }],
+    ['npm:second', { default: second }],
+  ]);
+
+  await loadExtensions(
+    dependencies({
+      importModule: (specifier: string) => Promise.resolve(modules.get(specifier)),
+      mountRouter: (path: string) => mounts.push(path),
+      addMiscLink: (link: unknown) => links.push(link),
+    }),
+    '["npm:first", "npm:second"]',
+  );
+
+  assert.deepEqual(events, ['first', 'original-second']);
+  assert.deepEqual(mounts, ['/ext/mutator', '/ext/real']);
+  assert.deepEqual(links, [{ text: 'Mutator', url: '/proxy/ext/mutator/' }]);
+});
+
 Deno.test('activates extensions serially with isolated routers and context-bound URLs and links', async () => {
   const events: string[] = [];
   const routers: unknown[] = [];
   const mounts: string[] = [];
   const links: unknown[] = [];
+  let markFirstStarted!: () => void;
+  const firstStarted = new Promise<void>((resolve) => markFirstStarted = resolve);
+  let releaseFirst!: () => void;
+  const firstBlocked = new Promise<void>((resolve) => releaseFirst = resolve);
   const modules = new Map([
     ['npm:first', {
       default: {
         id: 'first',
         apiVersion: 1,
-        activate(context: ExtensionContext, options: JsonValue | undefined) {
-          events.push(`first:${JSON.stringify(options)}`);
+        async activate(context: ExtensionContext, options: unknown) {
+          events.push(`first-start:${JSON.stringify(options)}`);
           routers.push(context.router);
           assert.equal(context.url('/jobs'), '/proxy/ext/first/jobs');
           assert.equal(context.url('/'), '/proxy/ext/first/');
           context.addLink({ text: 'First', path: '/jobs' });
+          markFirstStarted();
+          await firstBlocked;
+          events.push('first-finish');
         },
       },
     }],
@@ -162,7 +265,7 @@ Deno.test('activates extensions serially with isolated routers and context-bound
       },
     }],
   ]);
-  await loadExtensions(
+  const loading = loadExtensions(
     dependencies({
       createRouter: () => ({}) as never,
       mountRouter: (path: string) => mounts.push(path),
@@ -172,7 +275,12 @@ Deno.test('activates extensions serially with isolated routers and context-bound
     '[{"specifier":"npm:first", "options":{"mode":"on"}}, "npm:second"]',
   );
 
-  assert.deepEqual(events, ['first:{"mode":"on"}', 'second']);
+  await firstStarted;
+  assert.deepEqual(events, ['first-start:{"mode":"on"}']);
+  releaseFirst();
+  await loading;
+
+  assert.deepEqual(events, ['first-start:{"mode":"on"}', 'first-finish', 'second']);
   assert.notEqual(routers[0], routers[1]);
   assert.deepEqual(mounts, ['/ext/first', '/ext/second']);
   assert.deepEqual(links, [{ text: 'First', url: '/proxy/ext/first/jobs' }]);

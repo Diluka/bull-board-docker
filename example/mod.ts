@@ -1,4 +1,4 @@
-import type { BullBoardExtension } from '../src/extensions/api.ts';
+import type { BullBoardExtension } from 'bull-board-docker/extensions';
 
 const extension: BullBoardExtension = {
   id: 'example',

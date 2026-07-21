@@ -15,19 +15,42 @@ export interface ExtensionSpec {
   options: JsonValue | undefined;
 }
 
-export interface ExtensionLoaderDependencies {
+export interface ExtensionPreparationDependencies {
+  cwd?: string;
+  createRouter?: () => Router;
+  importModule?: (specifier: string) => Promise<unknown>;
+}
+
+export interface ExtensionActivationDependencies {
   redis: ExtensionContext['redis'];
   queues: ExtensionQueues;
   proxyPath: string;
-  cwd?: string;
-  createRouter?: () => Router;
+}
+
+export interface ExtensionLoaderDependencies extends ExtensionPreparationDependencies, ExtensionActivationDependencies {
   mountRouter: (mountPath: string, router: Router) => void;
   addMiscLink: (link: IMiscLink) => void;
-  importModule?: (specifier: string) => Promise<unknown>;
 }
 
 export interface ExtensionLifecycle {
   dispose(): Promise<void>;
+}
+
+export interface ActivatedExtensions extends ExtensionLifecycle {
+  readonly miscLinks: readonly IMiscLink[];
+  mountRouters(mountRouter: (mountPath: string, router: Router) => void): void;
+}
+
+export interface PreparedExtensions {
+  activate(dependencies: ExtensionActivationDependencies): Promise<ActivatedExtensions>;
+}
+
+interface PreparedExtension {
+  readonly index: number;
+  readonly specifier: string;
+  readonly options: JsonValue | undefined;
+  readonly id: string;
+  readonly activate: BullBoardExtension['activate'];
 }
 
 export function parseExtensionConfig(value: string | undefined): ExtensionSpec[] {
@@ -45,7 +68,7 @@ export function parseExtensionConfig(value: string | undefined): ExtensionSpec[]
 
   return parsed.map((entry, index) => {
     if (typeof entry === 'string') {
-      if (entry.trim() === '') throw configEntryError(index);
+      if (entry.trim() === '') throw configEntryError(index, entry);
       return { specifier: entry, options: undefined };
     }
     if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) {
@@ -62,19 +85,23 @@ export function parseExtensionConfig(value: string | undefined): ExtensionSpec[]
 }
 
 function configEntryError(index: number, specifier?: string): Error {
-  return new Error(`Invalid BULL_BOARD_EXTENSIONS entry at index ${index}${specifier === undefined ? '' : ` (${specifier})`}`);
+  return new Error(
+    `Invalid BULL_BOARD_EXTENSIONS entry at index ${index}${specifier === undefined ? '' : ` (${JSON.stringify(specifier)})`}`,
+  );
 }
 
 export async function resolveExtensionSpecifier(specifier: string, cwd = process.cwd()): Promise<string> {
-  if (!windowsAbsolutePathPattern.test(specifier) && schemePattern.test(specifier)) {
-    const scheme = specifier.slice(0, specifier.indexOf(':')).toLowerCase();
-    if (scheme === 'npm' || scheme === 'jsr' || scheme === 'https') return specifier;
-    if (scheme !== 'file') throw new Error(`Unsupported extension specifier "${specifier}"`);
+  const normalizedScheme = !windowsAbsolutePathPattern.test(specifier) && schemePattern.test(specifier)
+    ? specifier.slice(0, specifier.indexOf(':')).toLowerCase()
+    : undefined;
+  if (normalizedScheme !== undefined) {
+    if (normalizedScheme === 'npm' || normalizedScheme === 'jsr' || normalizedScheme === 'https') return specifier;
+    if (normalizedScheme !== 'file') throw new Error(`Unsupported extension specifier "${specifier}"`);
   }
 
   let localPath: string;
   try {
-    localPath = specifier.startsWith('file:')
+    localPath = normalizedScheme === 'file'
       ? fileURLToPath(specifier)
       : (isAbsolute(specifier) || windowsAbsolutePathPattern.test(specifier) ? specifier : resolve(cwd, specifier));
   } catch (error) {
@@ -101,18 +128,77 @@ export async function loadExtensions(
   dependencies: ExtensionLoaderDependencies,
   configuration = process.env.BULL_BOARD_EXTENSIONS,
 ): Promise<ExtensionLifecycle> {
+  const prepared = await prepareExtensions(dependencies, configuration);
+  const activated = await prepared.activate(dependencies);
+  try {
+    activated.mountRouters(dependencies.mountRouter);
+    for (const link of activated.miscLinks) dependencies.addMiscLink(link);
+  } catch (error) {
+    try {
+      await activated.dispose();
+    } catch (disposeError) {
+      throw new AggregateError([error, disposeError], `Failed to mount extensions: ${errorMessage(error)}`);
+    }
+    throw error;
+  }
+  return activated;
+}
+
+export async function prepareExtensions(
+  dependencies: ExtensionPreparationDependencies = {},
+  configuration = process.env.BULL_BOARD_EXTENSIONS,
+): Promise<PreparedExtensions> {
   const specs = parseExtensionConfig(configuration);
   const createRouter = dependencies.createRouter ?? (() => express.Router());
   const importModule = dependencies.importModule ?? ((specifier: string) => import(specifier));
-  const activated: ExtensionDisposer[] = [];
   const ids = new Set<string>();
-  let disposePromise: Promise<void> | undefined;
+  const extensions: PreparedExtension[] = [];
 
+  for (const [index, spec] of specs.entries()) {
+    let resolvedSpecifier: string;
+    try {
+      resolvedSpecifier = await resolveExtensionSpecifier(spec.specifier, dependencies.cwd);
+    } catch (error) {
+      throw extensionOperationError('resolve', index, spec.specifier, error);
+    }
+    let module: unknown;
+    try {
+      module = await importModule(resolvedSpecifier);
+    } catch (error) {
+      throw extensionOperationError('import', index, spec.specifier, error);
+    }
+    const extension = validateExtension(module, index, spec.specifier);
+    const id = extension.id;
+    if (ids.has(id)) throw new Error(`Duplicate extension id "${id}" at index ${index} (${spec.specifier})`);
+    ids.add(id);
+    extensions.push({
+      index,
+      specifier: spec.specifier,
+      options: spec.options,
+      id,
+      activate: extension.activate.bind(extension),
+    });
+  }
+
+  return {
+    activate: (activationDependencies) => activatePreparedExtensions(extensions, activationDependencies, createRouter),
+  };
+}
+
+async function activatePreparedExtensions(
+  extensions: readonly PreparedExtension[],
+  dependencies: ExtensionActivationDependencies,
+  createRouter: () => Router,
+): Promise<ActivatedExtensions> {
+  const disposers: ExtensionDisposer[] = [];
+  const routers: { readonly id: string; readonly router: Router }[] = [];
+  const miscLinks: IMiscLink[] = [];
+  let disposePromise: Promise<void> | undefined;
   const dispose = (): Promise<void> => {
     if (disposePromise) return disposePromise;
     disposePromise = (async () => {
       const errors: unknown[] = [];
-      for (const disposer of activated.reverse()) {
+      for (const disposer of [...disposers].reverse()) {
         try {
           await disposer();
         } catch (error) {
@@ -125,39 +211,25 @@ export async function loadExtensions(
   };
 
   try {
-    for (const [index, spec] of specs.entries()) {
-      let specifier: string;
-      try {
-        specifier = await resolveExtensionSpecifier(spec.specifier, dependencies.cwd);
-      } catch (error) {
-        throw extensionOperationError('resolve', index, spec.specifier, error);
-      }
-      let module: unknown;
-      try {
-        module = await importModule(specifier);
-      } catch (error) {
-        throw extensionOperationError('import', index, spec.specifier, error);
-      }
-      const extension = validateExtension(module, index, spec.specifier);
-      if (ids.has(extension.id)) throw new Error(`Duplicate extension id "${extension.id}" at index ${index} (${spec.specifier})`);
-      ids.add(extension.id);
-
-      let activating = true;
+    for (const extension of extensions) {
       const router = createRouter();
-      const context = createContext(dependencies, extension.id, router, () => activating);
+      let activating = true;
+      const context = createContext(dependencies, extension.id, router, () => activating, (link) => miscLinks.push(link));
       let result: void | ExtensionDisposer;
       try {
-        result = await extension.activate(context, spec.options);
+        result = await extension.activate(context, extension.options);
       } catch (error) {
+        throw extensionOperationError('activate', extension.index, extension.specifier, error);
+      } finally {
         activating = false;
-        throw extensionOperationError('activate', index, spec.specifier, error);
       }
-      activating = false;
       if (result !== undefined && typeof result !== 'function') {
-        throw new Error(`Extension at index ${index} (${spec.specifier}) with id "${extension.id}" returned an invalid activate result`);
+        throw new Error(
+          `Extension at index ${extension.index} (${extension.specifier}) with id "${extension.id}" returned an invalid activate result`,
+        );
       }
-      if (typeof result === 'function') activated.push(result);
-      dependencies.mountRouter(`/ext/${extension.id}`, router);
+      if (typeof result === 'function') disposers.push(result);
+      routers.push({ id: extension.id, router });
     }
   } catch (error) {
     try {
@@ -168,7 +240,14 @@ export async function loadExtensions(
     throw error;
   }
 
-  return { dispose };
+  const frozenMiscLinks = Object.freeze([...miscLinks]);
+  return {
+    miscLinks: frozenMiscLinks,
+    mountRouters: (mountRouter) => {
+      for (const { id, router } of routers) mountRouter(`/ext/${id}`, router);
+    },
+    dispose,
+  };
 }
 
 function validateExtension(module: unknown, index: number, specifier: string): BullBoardExtension {
@@ -184,10 +263,11 @@ function validateExtension(module: unknown, index: number, specifier: string): B
 }
 
 function createContext(
-  dependencies: ExtensionLoaderDependencies,
+  dependencies: ExtensionActivationDependencies,
   id: string,
   router: Router,
   isActivating: () => boolean,
+  addMiscLink: (link: IMiscLink) => void,
 ): ExtensionContext {
   return {
     redis: dependencies.redis,
@@ -197,7 +277,7 @@ function createContext(
     url: (path) => extensionUrl(dependencies.proxyPath, id, path),
     addLink: ({ text, path }) => {
       if (!isActivating()) throw new Error(`Extension "${id}" can only add links while activating`);
-      dependencies.addMiscLink({ text, url: extensionUrl(dependencies.proxyPath, id, path) });
+      addMiscLink({ text, url: extensionUrl(dependencies.proxyPath, id, path) });
     },
   };
 }

@@ -15,6 +15,18 @@ try {
     '-c',
     'test ! -e /usr/app/example',
   ]);
+  await compose([
+    'run',
+    '--rm',
+    '--no-deps',
+    '--entrypoint',
+    'deno',
+    'bull-board',
+    'check',
+    '--frozen',
+    '--config=/usr/app/deno.json',
+    '/extensions/example/mod.ts',
+  ]);
   await compose(['up', '-d', 'bull-board', 'bull-board-baseline']);
   await compose(['run', '--rm', '--no-deps', 'acceptance']);
 
