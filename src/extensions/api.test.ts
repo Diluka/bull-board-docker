@@ -1,4 +1,4 @@
-import type { BullBoardExtension, ExtensionContext, ExtensionLink, ExtensionQueues, RawQueue } from './api.ts';
+import type { BullBoardExtension, ExtensionContext, ExtensionLink, ExtensionPages, ExtensionQueues, RawQueue } from './api.ts';
 import type { ExtensionLoaderDependencies } from './loader.ts';
 
 const rawQueues: readonly RawQueue[] = [];
@@ -12,6 +12,9 @@ const optionsAreUnknown: Equal<Parameters<BullBoardExtension['activate']>[1], un
 
 function assertCompileTimeContracts() {
   const context = null as unknown as ExtensionContext;
+  const pages = null as unknown as ExtensionPages;
+  pages.mount({ root: new URL('https://extensions.example/public/') });
+  context.pages.mount({ root: new URL('https://extensions.example/public/') });
   // @ts-expect-error Extension paths must be rooted.
   context.url('queues');
   // @ts-expect-error Extension links must be rooted.

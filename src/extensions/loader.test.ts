@@ -331,6 +331,153 @@ Deno.test('activates extensions serially with isolated routers and context-bound
   assert.deepEqual(links, [{ text: 'First', url: '/proxy/ext/first/jobs' }]);
 });
 
+Deno.test('completes each extension page mount before activating the next extension', async () => {
+  const events: string[] = [];
+  const pages = recordingPages(events);
+  const modules = new Map([
+    ['npm:first', {
+      default: {
+        id: 'first',
+        apiVersion: 1,
+        activate(context: ExtensionContext) {
+          events.push('activate:first');
+          context.pages.mount({
+            root: new URL('https://extensions.example/first/'),
+            preload: ['index.html'],
+          });
+        },
+      },
+    }],
+    ['npm:second', {
+      default: {
+        id: 'second',
+        apiVersion: 1,
+        activate(context: ExtensionContext) {
+          events.push('activate:second');
+          context.pages.mount({
+            root: new URL('https://extensions.example/second/'),
+            preload: ['index.html'],
+          });
+        },
+      },
+    }],
+  ]);
+
+  await loadExtensions(
+    dependencies({
+      createPages: pages,
+      importModule: (specifier: string) => Promise.resolve(modules.get(specifier)),
+    }),
+    '["npm:first", "npm:second"]',
+  );
+
+  assert.deepEqual(events, [
+    'activate:first',
+    'preload:first/index.html',
+    'activate:second',
+    'preload:second/index.html',
+  ]);
+});
+
+Deno.test('rejects late and duplicate page mounts with extension activation diagnostics', async () => {
+  let context: ExtensionContext | undefined;
+  await loadExtensions(
+    dependencies({
+      createPages: recordingPages([]),
+      importModule: () =>
+        Promise.resolve({
+          default: {
+            id: 'pages',
+            apiVersion: 1,
+            activate(extensionContext: ExtensionContext) {
+              context = extensionContext;
+              extensionContext.pages.mount({ root: new URL('https://extensions.example/pages/') });
+              extensionContext.pages.mount({ root: new URL('https://extensions.example/duplicate/') });
+            },
+          },
+        }),
+    }),
+    '["npm:pages"]',
+  ).then(
+    () => assert.fail('expected duplicate mount to fail'),
+    (error) => assert.match(error.message, /index 0 \(npm:pages\).*only mount one page root/),
+  );
+
+  const late = context;
+  assert.ok(late);
+  assert.throws(
+    () => late.pages.mount({ root: new URL('https://extensions.example/late/') }),
+    /only mount pages while activating/,
+  );
+});
+
+Deno.test('rolls back a disposer when its page preload fails', async () => {
+  const events: string[] = [];
+  await assert.rejects(
+    () =>
+      loadExtensions(
+        dependencies({
+          createPages: failingPages,
+          importModule: () =>
+            Promise.resolve({
+              default: {
+                id: 'broken-pages',
+                apiVersion: 1,
+                activate(context: ExtensionContext) {
+                  context.pages.mount({
+                    root: new URL('https://extensions.example/broken/'),
+                    preload: ['index.html'],
+                  });
+                  return () => events.push('dispose');
+                },
+              },
+            }),
+        }),
+        '["npm:broken-pages"]',
+      ),
+    /index 0 \(npm:broken-pages\).*id "broken-pages".*https:\/\/extensions\.example\/broken\/index\.html/,
+  );
+  assert.deepEqual(events, ['dispose']);
+});
+
+function recordingPages(events: string[]) {
+  return (id: string, _router: unknown, isActivating: () => boolean) => {
+    let root: URL | undefined;
+    let preload: readonly string[] = [];
+    return {
+      pages: {
+        mount: (options: { root: URL; preload?: readonly string[] }) => {
+          if (!isActivating()) throw new Error('only mount pages while activating');
+          if (root !== undefined) throw new Error('only mount one page root');
+          root = options.root;
+          preload = options.preload ?? [];
+        },
+      },
+      completeActivation: async () => {
+        for (const path of preload) events.push(`preload:${id}/${path}`);
+      },
+    };
+  };
+}
+
+function failingPages(_id: string, _router: unknown, isActivating: () => boolean) {
+  let root: URL | undefined;
+  let preload: readonly string[] = [];
+  return {
+    pages: {
+      mount: (options: { root: URL; preload?: readonly string[] }) => {
+        if (!isActivating()) throw new Error('only mount pages while activating');
+        root = options.root;
+        preload = options.preload ?? [];
+      },
+    },
+    completeActivation: async () => {
+      if (root === undefined || preload.length === 0) return;
+      throw new Error(new URL(preload[0], root).href);
+    },
+  };
+}
+
 Deno.test('keeps extension URLs rooted while preserving query, fragment, and encoded filenames', async () => {
   await loadExtensions(
     dependencies({

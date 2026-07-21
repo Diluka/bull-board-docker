@@ -17,10 +17,20 @@ export interface ExtensionLink {
   path: `/${string}`;
 }
 
+export interface ExtensionPageMountOptions {
+  root: URL;
+  preload?: readonly string[];
+}
+
+export interface ExtensionPages {
+  mount(options: ExtensionPageMountOptions): void;
+}
+
 export interface ExtensionContext {
   redis: Redis | Cluster;
   queues: ExtensionQueues;
   router: Router;
+  pages: ExtensionPages;
   proxyPath: string;
   url(path: `/${string}`): string;
   addLink(link: ExtensionLink): void;

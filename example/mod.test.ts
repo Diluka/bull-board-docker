@@ -29,6 +29,7 @@ Deno.test('example extension registers its root page and navigation link from ra
       get: (name) => queues.find((queue) => queue.name === name),
     },
     router,
+    pages: { mount: () => {} },
     proxyPath: '/app/bull-board',
     url: (path) => `/app/bull-board/ext/example${path}`,
     addLink: (link) => links.push(link),

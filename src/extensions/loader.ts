@@ -5,6 +5,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import process from 'node:process';
 
 import type { BullBoardExtension, ExtensionContext, ExtensionDisposer, ExtensionQueues, JsonValue } from './api.ts';
+import { createExtensionPages } from './pages.ts';
 
 const extensionIdPattern = /^[a-z0-9](?:[a-z0-9._-]{0,63})$/;
 const windowsAbsolutePathPattern = /^[a-zA-Z]:[\\/]|^\\\\/;
@@ -18,6 +19,7 @@ export interface ExtensionSpec {
 export interface ExtensionPreparationDependencies {
   cwd?: string;
   createRouter?: () => Router;
+  createPages?: typeof createExtensionPages;
   importModule?: (specifier: string) => Promise<unknown>;
 }
 
@@ -157,6 +159,7 @@ export async function prepareExtensions(
 ): Promise<PreparedExtensions> {
   const specs = parseExtensionConfig(configuration);
   const createRouter = dependencies.createRouter ?? (() => express.Router());
+  const createPages = dependencies.createPages ?? createExtensionPages;
   const importModule = dependencies.importModule ?? ((specifier: string) => import(specifier));
   const ids = new Set<string>();
   const extensions: PreparedExtension[] = [];
@@ -187,7 +190,7 @@ export async function prepareExtensions(
   }
 
   return {
-    activate: (activationDependencies) => activatePreparedExtensions(extensions, activationDependencies, createRouter),
+    activate: (activationDependencies) => activatePreparedExtensions(extensions, activationDependencies, createRouter, createPages),
   };
 }
 
@@ -195,6 +198,7 @@ async function activatePreparedExtensions(
   extensions: readonly PreparedExtension[],
   dependencies: ExtensionActivationDependencies,
   createRouter: () => Router,
+  createPages: typeof createExtensionPages,
 ): Promise<ActivatedExtensions> {
   const disposers: ExtensionDisposer[] = [];
   const routers: { readonly id: string; readonly router: Router }[] = [];
@@ -220,7 +224,15 @@ async function activatePreparedExtensions(
     for (const extension of extensions) {
       const router = createRouter();
       let activating = true;
-      const context = createContext(dependencies, extension.id, router, () => activating, (link) => miscLinks.push(link));
+      const pageController = createPages(extension.id, router, () => activating);
+      const context = createContext(
+        dependencies,
+        extension.id,
+        router,
+        pageController.pages,
+        () => activating,
+        (link) => miscLinks.push(link),
+      );
       let result: void | ExtensionDisposer;
       try {
         result = await extension.activate(context, extension.options);
@@ -235,6 +247,11 @@ async function activatePreparedExtensions(
         );
       }
       if (typeof result === 'function') disposers.push(result);
+      try {
+        await pageController.completeActivation();
+      } catch (error) {
+        throw pageOperationError(extension, error);
+      }
       routers.push({ id: extension.id, router });
     }
   } catch (error) {
@@ -273,6 +290,7 @@ function createContext(
   dependencies: ExtensionActivationDependencies,
   id: string,
   router: Router,
+  pages: ExtensionContext['pages'],
   isActivating: () => boolean,
   addMiscLink: (link: IMiscLink) => void,
 ): ExtensionContext {
@@ -280,6 +298,7 @@ function createContext(
     redis: dependencies.redis,
     queues: dependencies.queues,
     router,
+    pages,
     proxyPath: dependencies.proxyPath,
     url: (path) => extensionUrl(dependencies.proxyPath, id, path),
     addLink: ({ text, path }) => {
@@ -306,4 +325,13 @@ function errorMessage(error: unknown): string {
 
 function extensionOperationError(operation: 'resolve' | 'import' | 'activate', index: number, specifier: string, cause: unknown): Error {
   return new Error(`Extension at index ${index} (${specifier}) failed to ${operation}: ${errorMessage(cause)}`, { cause });
+}
+
+function pageOperationError(extension: PreparedExtension, cause: unknown): Error {
+  return new Error(
+    `Extension at index ${extension.index} (${extension.specifier}) with id "${extension.id}" failed to preload pages: ${
+      errorMessage(cause)
+    }`,
+    { cause },
+  );
 }
