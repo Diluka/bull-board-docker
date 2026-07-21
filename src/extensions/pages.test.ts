@@ -92,15 +92,19 @@ Deno.test('rejects unsafe roots and preload paths before registering a page moun
 
 Deno.test('loads a real file URL page root with Deno text imports', async () => {
   const directory = await Deno.makeTempDir();
-  await Deno.writeTextFile(join(directory, 'index.html'), '<!doctype html><h1>File</h1>');
-  const app = express();
-  const router = express.Router();
-  app.use(router);
-  const controller = createExtensionPages('example', router, () => true);
-  controller.pages.mount({ root: new URL('./', pathToFileURL(join(directory, 'placeholder')).href) });
-  await controller.completeActivation();
+  try {
+    await Deno.writeTextFile(join(directory, 'index.html'), '<!doctype html><h1>File</h1>');
+    const app = express();
+    const router = express.Router();
+    app.use(router);
+    const controller = createExtensionPages('example', router, () => true);
+    controller.pages.mount({ root: new URL('./', pathToFileURL(join(directory, 'placeholder')).href) });
+    await controller.completeActivation();
 
-  assert.equal(await text(await request(app, '/')), '<!doctype html><h1>File</h1>');
+    assert.equal(await text(await request(app, '/')), '<!doctype html><h1>File</h1>');
+  } finally {
+    await Deno.remove(directory, { recursive: true });
+  }
 });
 
 Deno.test('rejects noncanonical request asset paths before URL normalization', async () => {
