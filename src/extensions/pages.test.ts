@@ -13,14 +13,15 @@ Deno.test('serves preloaded pages, nested indexes, and supported asset media typ
   app.use(router);
   const loads: string[] = [];
   const controller = createExtensionPages('example', router, () => true, {
-    loadText: async (url) => {
+    loadText: (url) => {
       loads.push(url.pathname);
-      return new Map([
+      const text = new Map([
         ['/public/index.html', '<!doctype html><h1>Example</h1>'],
         ['/public/app.js', 'console.log("example")'],
         ['/public/styles.css', 'body { color: green; }'],
         ['/public/nested/index.html', '<p>Nested</p>'],
-      ]).get(url.pathname) ?? Promise.reject(new Error(`missing ${url.pathname}`));
+      ]).get(url.pathname);
+      return text === undefined ? Promise.reject(new Error(`missing ${url.pathname}`)) : Promise.resolve(text);
     },
   });
 
@@ -39,13 +40,13 @@ Deno.test('serves preloaded pages, nested indexes, and supported asset media typ
 
 Deno.test('only permits one mount while the extension is activating', () => {
   const router = express.Router();
-  const inactive = createExtensionPages('example', router, () => false, { loadText: async () => '' });
+  const inactive = createExtensionPages('example', router, () => false, { loadText: () => Promise.resolve('') });
   assert.throws(
     () => inactive.pages.mount({ root: new URL('https://extensions.example/public/') }),
     /only mount pages while activating/,
   );
 
-  const active = createExtensionPages('example', router, () => true, { loadText: async () => '' });
+  const active = createExtensionPages('example', router, () => true, { loadText: () => Promise.resolve('') });
   active.pages.mount({ root: new URL('https://extensions.example/public/') });
   assert.throws(
     () => active.pages.mount({ root: new URL('https://extensions.example/other/') }),
@@ -54,7 +55,7 @@ Deno.test('only permits one mount while the extension is activating', () => {
 });
 
 Deno.test('rejects unsafe roots and preload paths before registering a page mount', () => {
-  const controller = createExtensionPages('example', express.Router(), () => true, { loadText: async () => '' });
+  const controller = createExtensionPages('example', express.Router(), () => true, { loadText: () => Promise.resolve('') });
   for (
     const root of [
       'ftp://extensions.example/public/',
@@ -82,7 +83,7 @@ Deno.test('rejects unsafe roots and preload paths before registering a page moun
       ['index.html?x=1'],
     ]
   ) {
-    const pages = createExtensionPages('example', express.Router(), () => true, { loadText: async () => '' });
+    const pages = createExtensionPages('example', express.Router(), () => true, { loadText: () => Promise.resolve('') });
     assert.throws(
       () => pages.pages.mount({ root: new URL('https://extensions.example/public/'), preload }),
       /preload/i,
@@ -113,9 +114,9 @@ Deno.test('rejects noncanonical request asset paths before URL normalization', a
   app.use(router);
   const loads: string[] = [];
   const controller = createExtensionPages('example', router, () => true, {
-    loadText: async (url) => {
+    loadText: (url) => {
       loads.push(url.href);
-      return '<p>safe</p>';
+      return Promise.resolve('<p>safe</p>');
     },
   });
   controller.pages.mount({ root: new URL('https://extensions.example/public/') });
@@ -144,9 +145,9 @@ Deno.test('serves map and SVG assets with exact types while rejecting HTM withou
   app.use(router);
   const loads: string[] = [];
   const controller = createExtensionPages('example', router, () => true, {
-    loadText: async (url) => {
+    loadText: (url) => {
       loads.push(url.pathname);
-      return url.pathname.endsWith('.map') ? '{"version":3}' : '<svg xmlns="http://www.w3.org/2000/svg" />';
+      return Promise.resolve(url.pathname.endsWith('.map') ? '{"version":3}' : '<svg xmlns="http://www.w3.org/2000/svg" />');
     },
   });
   controller.pages.mount({ root: new URL('https://extensions.example/public/') });
@@ -165,7 +166,7 @@ Deno.test('handles GET and HEAD without overriding explicit routes', async () =>
   const router = express.Router();
   app.use(router);
   router.get('/explicit', (_request, response) => response.send('explicit route'));
-  const controller = createExtensionPages('example', router, () => true, { loadText: async () => '<p>fallback</p>' });
+  const controller = createExtensionPages('example', router, () => true, { loadText: () => Promise.resolve('<p>fallback</p>') });
   controller.pages.mount({ root: new URL('https://extensions.example/public/') });
   await controller.completeActivation();
 
@@ -181,7 +182,7 @@ Deno.test('does not install a fallback when preloading fails', async () => {
   const router = express.Router();
   app.use(router);
   const controller = createExtensionPages('example', router, () => true, {
-    loadText: async () => Promise.reject(new Error('preload failed')),
+    loadText: () => Promise.reject(new Error('preload failed')),
   });
   controller.pages.mount({ root: new URL('https://extensions.example/public/'), preload: ['index.html'] });
 
@@ -230,8 +231,8 @@ Deno.test('keeps page mounts and asset caches isolated between controllers', asy
   const second = express();
   const secondRouter = express.Router();
   second.use(secondRouter);
-  const firstController = createExtensionPages('first', firstRouter, () => true, { loadText: async () => '<p>first</p>' });
-  const secondController = createExtensionPages('second', secondRouter, () => true, { loadText: async () => '<p>second</p>' });
+  const firstController = createExtensionPages('first', firstRouter, () => true, { loadText: () => Promise.resolve('<p>first</p>') });
+  const secondController = createExtensionPages('second', secondRouter, () => true, { loadText: () => Promise.resolve('<p>second</p>') });
   firstController.pages.mount({ root: new URL('https://extensions.example/first/') });
   secondController.pages.mount({ root: new URL('https://extensions.example/second/') });
   await Promise.all([firstController.completeActivation(), secondController.completeActivation()]);
@@ -263,11 +264,11 @@ Deno.test('uses Deno text imports for HTTP assets and caches the default loader 
   }
 });
 
-async function request(app: Express, path: string, init: RequestInit = {}): Promise<Response> {
-  return withServer(app, async (port) => await fetch(`http://127.0.0.1:${port}${path}`, init));
+function request(app: Express, path: string, init: RequestInit = {}): Promise<Response> {
+  return withServer(app, (port) => fetch(`http://127.0.0.1:${port}${path}`, init));
 }
 
-async function rawRequest(app: Express, path: string): Promise<Response> {
+function rawRequest(app: Express, path: string): Promise<Response> {
   return withServer(app, (port) =>
     new Promise<Response>((resolve, reject) => {
       const request = httpRequest({ hostname: '127.0.0.1', port, path }, (response) => {

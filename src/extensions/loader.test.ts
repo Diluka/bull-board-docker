@@ -453,8 +453,9 @@ function recordingPages(events: string[]) {
           preload = options.preload ?? [];
         },
       },
-      completeActivation: async () => {
+      completeActivation: () => {
         for (const path of preload) events.push(`preload:${id}/${path}`);
+        return Promise.resolve();
       },
     };
   };
@@ -471,9 +472,9 @@ function failingPages(_id: string, _router: unknown, isActivating: () => boolean
         preload = options.preload ?? [];
       },
     },
-    completeActivation: async () => {
-      if (root === undefined || preload.length === 0) return;
-      throw new Error(new URL(preload[0], root).href);
+    completeActivation: () => {
+      if (root === undefined || preload.length === 0) return Promise.resolve();
+      return Promise.reject(new Error(new URL(preload[0], root).href));
     },
   };
 }
