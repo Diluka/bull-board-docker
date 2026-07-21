@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>TypeScript Queue Signal</title>
+    <link rel="stylesheet" href="./styles.css">
+    <script type="module" src="./app.ts"></script>
+  </head>
+  <body>
+    <main class="signal-console">
+      <header class="masthead reveal reveal--one">
+        <div class="language-chip"><span>TS</span> Browser source</div>
+        <p class="eyebrow">Extension 02 / Compiled at startup</p>
+        <h1>Queue<br>Signal</h1>
+        <p class="lede">Native TypeScript, bundled from its source URL and served directly from memory.</p>
+      </header>
+
+      <section class="queue-panel reveal reveal--two" aria-labelledby="queue-heading">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">Live Redis register</p>
+            <h2 id="queue-heading">Connected queues</h2>
+          </div>
+          <button id="refresh-button" type="button">Refresh signal</button>
+        </div>
+        <p id="queue-status" class="status" role="status" aria-live="polite">Establishing a typed connection.</p>
+        <ul id="queue-list" class="queue-list" aria-describedby="queue-status"></ul>
+      </section>
+    </main>
+  </body>
+</html>

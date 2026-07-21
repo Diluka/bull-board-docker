@@ -1,20 +1,109 @@
 services:
   nginx:
     build: ./test/nginx
+
   redis:
     image: redis:alpine
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 1s
+      timeout: 3s
+      retries: 30
+
+  queue-fixture:
+    image: bull-board-docker:test
+    entrypoint:
+      - deno
+      - run
+      - -A
+      - --config=/usr/app/deno.json
+      - /usr/app/test/create-example-queue.ts
+    environment:
+      REDIS_HOST: redis
+    volumes:
+      - type: bind
+        source: ./test/create-example-queue.ts
+        target: /usr/app/test/create-example-queue.ts
+        read_only: true
+    depends_on:
+      redis:
+        condition: service_healthy
+
   bull-board:
+    image: bull-board-docker:test
     build: .
     environment:
       REDIS_HOST: redis
-      PROXY_PATH: /app/bull-board/
+      PROXY_PATH: /app/bull-board
+      PORT: 80
+      NODE_ENV: test
+      USER_LOGIN: test-user
+      USER_PASSWORD: test-password
+      BULL_BOARD_EXTENSIONS: '["/extensions/example-js","/extensions/example-ts"]'
+    volumes:
+      - type: bind
+        source: ./extensions/example-js
+        target: /extensions/example-js
+        read_only: true
+      - type: bind
+        source: ./extensions/example-ts
+        target: /extensions/example-ts
+        read_only: true
+    depends_on:
+      redis:
+        condition: service_healthy
+      queue-fixture:
+        condition: service_completed_successfully
+      nginx:
+        condition: service_started
+
+  bull-board-baseline:
+    image: bull-board-docker:test
+    environment:
+      REDIS_HOST: redis
       PORT: 80
       NODE_ENV: test
     depends_on:
-      - redis
-      - nginx
-  sut: # docker hub test entry
-    image: curlimages/curl
-    command: -sSL --retry 3 --retry-connrefused http://nginx/app/bull-board
+      redis:
+        condition: service_healthy
+
+  acceptance:
+    image: denoland/deno:alpine
+    command: deno run --allow-env --allow-net /test/acceptance.ts
+    volumes:
+      - type: bind
+        source: ./test/acceptance.ts
+        target: /test/acceptance.ts
+        read_only: true
     depends_on:
-      - bull-board
+      bull-board:
+        condition: service_started
+      bull-board-baseline:
+        condition: service_started
+
+  invalid-extension:
+    image: bull-board-docker:test
+    environment:
+      REDIS_HOST: redis
+      PORT: 80
+      NODE_ENV: test
+      BULL_BOARD_EXTENSIONS: '["/extensions/missing"]'
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  invalid-typescript-extension:
+    image: bull-board-docker:test
+    environment:
+      REDIS_HOST: redis
+      PORT: 80
+      NODE_ENV: test
+      BULL_BOARD_EXTENSIONS: '["/extensions/invalid-typescript"]'
+    volumes:
+      - type: bind
+        source: ./test/fixtures/invalid-typescript-extension
+        target: /extensions/invalid-typescript
+        read_only: true
+    depends_on:
+      redis:
+        condition: service_healthy
