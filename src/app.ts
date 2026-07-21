@@ -9,6 +9,7 @@ import passport from 'passport';
 
 import type { ExtensionQueues } from './extensions/api.ts';
 import { type ExtensionLifecycle, prepareExtensions as prepareDefaultExtensions } from './extensions/loader.ts';
+import { injectExtensionMenuIcon } from './extensions/menu-icon.ts';
 import { authRouter as defaultAuthRouter } from './login.ts';
 
 export interface ApplicationConfig {
@@ -94,7 +95,12 @@ export async function createApplication(
     });
     const protectedRouter = runtime.createProtectedRouter();
     extensionLifecycle.mountRouters((path, router) => protectedRouter.use(path, router));
-    protectedRouter.use(options.serverAdapter.getRouter());
+    const boardRouter = options.serverAdapter.getRouter();
+    if (extensionLifecycle.miscLinks.length > 0) {
+      protectedRouter.use(injectExtensionMenuIcon(), boardRouter);
+    } else {
+      protectedRouter.use(boardRouter);
+    }
 
     const app = express();
     app.set('views', import.meta.dirname + '/views');

@@ -144,6 +144,41 @@ Deno.test('application imports before refresh, activates serially, creates Bull 
   assert.equal(await (await request(result.app, '/')).text(), 'board');
 });
 
+Deno.test('application injects an accessible inline icon into the Bull Board extension menu', async () => {
+  const boardRouter = express.Router();
+  boardRouter.get('/', (_req, res) => res.type('html').send('<!doctype html><html><body><div id="root"></div></body></html>'));
+  const result = await createApplication(
+    {
+      config: testConfig(),
+      redis: {} as never,
+      queues: { list: () => [], get: () => undefined, refresh: () => Promise.resolve([]) },
+      serverAdapter: { setBasePath: () => {}, getRouter: () => boardRouter },
+    },
+    runtimeOverrides({
+      prepareExtensions: () =>
+        prepareExtensions({
+          importModule: () =>
+            Promise.resolve({
+              default: {
+                id: 'demo',
+                apiVersion: 1,
+                activate(context: ExtensionContext) {
+                  context.addLink({ text: 'Demo', path: '/' });
+                },
+              },
+            }),
+        }, '["npm:demo"]'),
+      createBullBoard: () => ({ replaceQueues: () => {} }),
+    }),
+  );
+
+  const html = await (await request(result.app, '/')).text();
+  assert.match(html, /data-bull-board-extension-menu-icon/);
+  assert.match(html, /data-bull-board-extension-icon[^>]+viewBox="2 2 20 20"[^>]+fill="currentColor"/);
+  assert.doesNotMatch(html, /data-bull-board-extension-icon[^>]+stroke=/);
+  assert.match(html, /setAttribute\('aria-label', 'Extensions'\)/);
+});
+
 Deno.test('application does not refresh queues or activate when a later extension import fails', async () => {
   let refreshCalls = 0;
   let activateCalls = 0;
