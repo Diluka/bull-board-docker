@@ -5,6 +5,7 @@ import { ensureLoggedIn as defaultEnsureLoggedIn } from 'connect-ensure-login';
 import express, { type Express, type RequestHandler, type Router } from 'express';
 import createSession from 'express-session';
 import type { Cluster, Redis } from 'ioredis';
+import { randomBytes } from 'node:crypto';
 import passport from 'passport';
 
 import type { ExtensionQueues } from './extensions/api.ts';
@@ -115,12 +116,12 @@ export async function createApplication(
 
     app.use(runtime.session({
       name: 'bull-board.sid',
-      secret: Math.random().toString(),
+      secret: randomBytes(32).toString('hex'),
       resave: false,
       saveUninitialized: false,
       cookie: {
         path: '/',
-        httpOnly: false,
+        httpOnly: true,
         secure: false,
       },
     }));
