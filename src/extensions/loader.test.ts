@@ -226,6 +226,51 @@ Deno.test('snapshots validated identity and activation callable before activatio
   assert.deepEqual(links, [{ text: 'Mutator', url: '/proxy/ext/mutator/' }]);
 });
 
+Deno.test('reads accessor-backed contract properties once and uses only their captured values', async () => {
+  let idReads = 0;
+  let apiVersionReads = 0;
+  let activateReads = 0;
+  const events: string[] = [];
+  const mounts: string[] = [];
+  const links: unknown[] = [];
+  const extension = {
+    get id() {
+      idReads++;
+      return idReads === 1 ? 'safe' : '../escaped';
+    },
+    get apiVersion() {
+      apiVersionReads++;
+      return apiVersionReads === 1 ? 1 : 2;
+    },
+    get activate() {
+      activateReads++;
+      if (activateReads > 1) return () => events.push('replacement');
+      return function (this: unknown, context: ExtensionContext) {
+        assert.equal(this, extension);
+        events.push('captured');
+        assert.equal(context.url('/'), '/proxy/ext/safe/');
+        context.addLink({ text: 'Safe', path: '/' });
+      };
+    },
+  };
+
+  await loadExtensions(
+    dependencies({
+      importModule: () => Promise.resolve({ default: extension }),
+      mountRouter: (path: string) => mounts.push(path),
+      addMiscLink: (link: unknown) => links.push(link),
+    }),
+    '["npm:accessors"]',
+  );
+
+  assert.equal(idReads, 1);
+  assert.equal(apiVersionReads, 1);
+  assert.equal(activateReads, 1);
+  assert.deepEqual(events, ['captured']);
+  assert.deepEqual(mounts, ['/ext/safe']);
+  assert.deepEqual(links, [{ text: 'Safe', url: '/proxy/ext/safe/' }]);
+});
+
 Deno.test('activates extensions serially with isolated routers and context-bound URLs and links', async () => {
   const events: string[] = [];
   const routers: unknown[] = [];

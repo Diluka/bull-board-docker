@@ -53,6 +53,13 @@ interface PreparedExtension {
   readonly activate: BullBoardExtension['activate'];
 }
 
+interface ValidatedExtension {
+  readonly id: string;
+  readonly apiVersion: 1;
+  readonly activate: BullBoardExtension['activate'];
+  readonly receiver: object;
+}
+
 export function parseExtensionConfig(value: string | undefined): ExtensionSpec[] {
   if (value === undefined || value.trim() === '') return [];
 
@@ -167,8 +174,7 @@ export async function prepareExtensions(
     } catch (error) {
       throw extensionOperationError('import', index, spec.specifier, error);
     }
-    const extension = validateExtension(module, index, spec.specifier);
-    const id = extension.id;
+    const { id, activate, receiver } = validateExtension(module, index, spec.specifier);
     if (ids.has(id)) throw new Error(`Duplicate extension id "${id}" at index ${index} (${spec.specifier})`);
     ids.add(id);
     extensions.push({
@@ -176,7 +182,7 @@ export async function prepareExtensions(
       specifier: spec.specifier,
       options: spec.options,
       id,
-      activate: extension.activate.bind(extension),
+      activate: activate.bind(receiver),
     });
   }
 
@@ -250,16 +256,17 @@ async function activatePreparedExtensions(
   };
 }
 
-function validateExtension(module: unknown, index: number, specifier: string): BullBoardExtension {
+function validateExtension(module: unknown, index: number, specifier: string): ValidatedExtension {
   const extension = module !== null && typeof module === 'object' && 'default' in module ? module.default : undefined;
   const label = `Extension at index ${index} (${specifier})`;
   if (extension === null || typeof extension !== 'object') throw new Error(`${label} must have a default export`);
-  if (!('id' in extension) || typeof extension.id !== 'string' || !extensionIdPattern.test(extension.id)) {
-    throw new Error(`${label} has an invalid id`);
-  }
-  if (!('apiVersion' in extension) || extension.apiVersion !== 1) throw new Error(`${label} must use apiVersion 1`);
-  if (!('activate' in extension) || typeof extension.activate !== 'function') throw new Error(`${label} must export an activate function`);
-  return extension as BullBoardExtension;
+  const id = 'id' in extension ? extension.id : undefined;
+  const apiVersion = 'apiVersion' in extension ? extension.apiVersion : undefined;
+  const activate = 'activate' in extension ? extension.activate : undefined;
+  if (typeof id !== 'string' || !extensionIdPattern.test(id)) throw new Error(`${label} has an invalid id`);
+  if (apiVersion !== 1) throw new Error(`${label} must use apiVersion 1`);
+  if (typeof activate !== 'function') throw new Error(`${label} must export an activate function`);
+  return Object.freeze({ id, apiVersion, activate: activate as BullBoardExtension['activate'], receiver: extension });
 }
 
 function createContext(
