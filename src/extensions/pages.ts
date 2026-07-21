@@ -5,10 +5,11 @@ import type { ExtensionPageMountOptions, ExtensionPages } from './api.ts';
 const mediaTypes = Object.freeze({
   '.css': 'text/css',
   '.html': 'text/html',
-  '.htm': 'text/html',
   '.js': 'text/javascript',
   '.json': 'application/json',
+  '.map': 'application/json',
   '.mjs': 'text/javascript',
+  '.svg': 'image/svg+xml',
   '.txt': 'text/plain',
 });
 
@@ -76,7 +77,7 @@ export function createExtensionPages(
 function validateRoot(root: URL): URL {
   const validated = new URL(root.href);
   if (
-    (validated.protocol !== 'http:' && validated.protocol !== 'https:') ||
+    (validated.protocol !== 'file:' && validated.protocol !== 'http:' && validated.protocol !== 'https:') ||
     validated.username !== '' ||
     validated.password !== '' ||
     validated.search !== '' ||
@@ -89,9 +90,7 @@ function validateRoot(root: URL): URL {
 }
 
 function resolvePreload(root: URL, path: string): URL {
-  if (path === '' || path.startsWith('/') || path.includes('\\') || path.includes('?') || path.includes('#')) {
-    throw new Error(`Invalid preload path "${path}"`);
-  }
+  if (!isCanonicalRelativePath(path)) throw new Error(`Invalid preload path "${path}"`);
   const url = new URL(path, root);
   if (!isWithinRoot(url, root)) throw new Error(`Invalid preload path "${path}"`);
   return url;
@@ -105,7 +104,8 @@ function serveAsset(
   loadAsset: (url: URL) => Promise<string>,
 ): void {
   if (request.method !== 'GET' && request.method !== 'HEAD') return next();
-  const requestAsset = request.path.endsWith('/') ? `${request.path.slice(1)}index.html` : request.path.slice(1);
+  const requestAsset = requestAssetPath(request);
+  if (requestAsset === undefined) return next();
   const url = new URL(requestAsset, mounted.root);
   const mediaType = mediaTypeFor(url.pathname);
   if (!isWithinRoot(url, mounted.root) || mediaType === undefined) return next();
@@ -114,6 +114,31 @@ function serveAsset(
     (text) => response.type(mediaType).send(text),
     () => next(),
   );
+}
+
+function requestAssetPath(request: Request): string | undefined {
+  const raw = request.url;
+  if (raw === '') return 'index.html';
+  if (!raw.startsWith('/') || raw.startsWith('//')) return undefined;
+  const relativePath = raw.slice(1);
+  if (relativePath === '') return 'index.html';
+  if (!isCanonicalRelativePath(relativePath)) return undefined;
+  return relativePath.endsWith('/') ? `${relativePath}index.html` : relativePath;
+}
+
+function isCanonicalRelativePath(path: string): boolean {
+  if (path.startsWith('/') || path.includes('\\') || path.includes('\0') || path.includes('?') || path.includes('#')) return false;
+
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(path);
+  } catch {
+    return false;
+  }
+  if (decoded.startsWith('/') || decoded.includes('\\') || decoded.includes('\0') || decoded.includes('?') || decoded.includes('#')) {
+    return false;
+  }
+  return decoded.split('/').every((segment) => segment !== '.' && segment !== '..');
 }
 
 function isWithinRoot(url: URL, root: URL): boolean {

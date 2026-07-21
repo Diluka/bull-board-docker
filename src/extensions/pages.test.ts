@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import { request as httpRequest } from 'node:http';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 import express, { type Express } from 'express';
 
@@ -55,7 +57,6 @@ Deno.test('rejects unsafe roots and preload paths before registering a page moun
   const controller = createExtensionPages('example', express.Router(), () => true, { loadText: async () => '' });
   for (
     const root of [
-      'file:///public/',
       'ftp://extensions.example/public/',
       'https://user@extensions.example/public/',
       'https://extensions.example/public/?version=1',
@@ -66,7 +67,21 @@ Deno.test('rejects unsafe roots and preload paths before registering a page moun
     assert.throws(() => controller.pages.mount({ root: new URL(root) }), /page root/i);
   }
 
-  for (const preload of [['/index.html'], ['../index.html'], ['nested/../../index.html'], ['%2e%2e/index.html'], ['index.html?x=1']]) {
+  for (
+    const preload of [
+      ['/index.html'],
+      ['//extensions.example/index.html'],
+      ['../index.html'],
+      ['nested/../index.html'],
+      ['nested/../../index.html'],
+      ['%2e%2e/index.html'],
+      ['nested/%2e%2e/index.html'],
+      ['nested\\index.html'],
+      ['nested/%5cindex.html'],
+      ['nested/%00index.html'],
+      ['index.html?x=1'],
+    ]
+  ) {
     const pages = createExtensionPages('example', express.Router(), () => true, { loadText: async () => '' });
     assert.throws(
       () => pages.pages.mount({ root: new URL('https://extensions.example/public/'), preload }),
@@ -75,16 +90,70 @@ Deno.test('rejects unsafe roots and preload paths before registering a page moun
   }
 });
 
-Deno.test('rejects request traversal after URL normalization', async () => {
+Deno.test('loads a real file URL page root with Deno text imports', async () => {
+  const directory = await Deno.makeTempDir();
+  await Deno.writeTextFile(join(directory, 'index.html'), '<!doctype html><h1>File</h1>');
   const app = express();
   const router = express.Router();
   app.use(router);
-  const controller = createExtensionPages('example', router, () => true, { loadText: async () => '<p>safe</p>' });
+  const controller = createExtensionPages('example', router, () => true);
+  controller.pages.mount({ root: new URL('./', pathToFileURL(join(directory, 'placeholder')).href) });
+  await controller.completeActivation();
+
+  assert.equal(await text(await request(app, '/')), '<!doctype html><h1>File</h1>');
+});
+
+Deno.test('rejects noncanonical request asset paths before URL normalization', async () => {
+  const app = express();
+  const router = express.Router();
+  app.use(router);
+  const loads: string[] = [];
+  const controller = createExtensionPages('example', router, () => true, {
+    loadText: async (url) => {
+      loads.push(url.href);
+      return '<p>safe</p>';
+    },
+  });
   controller.pages.mount({ root: new URL('https://extensions.example/public/') });
   await controller.completeActivation();
 
-  assert.equal((await rawRequest(app, '/%2e%2e/private.html')).status, 404);
-  assert.equal((await rawRequest(app, '/nested/%2e%2e/%2e%2e/private.html')).status, 404);
+  for (
+    const path of [
+      '/nested/../index.html',
+      '/%2e%2e/private.html',
+      '/nested/%2e%2e/%2e%2e/private.html',
+      '//extensions.example/index.html',
+      '/nested\\index.html',
+      '/nested/%5cindex.html',
+      '/nested/%00index.html',
+      '/index.html?version=1',
+    ]
+  ) {
+    assert.equal((await rawRequest(app, path)).status, 404, path);
+  }
+  assert.deepEqual(loads, []);
+});
+
+Deno.test('serves map and SVG assets with exact types while rejecting HTM without loading it', async () => {
+  const app = express();
+  const router = express.Router();
+  app.use(router);
+  const loads: string[] = [];
+  const controller = createExtensionPages('example', router, () => true, {
+    loadText: async (url) => {
+      loads.push(url.pathname);
+      return url.pathname.endsWith('.map') ? '{"version":3}' : '<svg xmlns="http://www.w3.org/2000/svg" />';
+    },
+  });
+  controller.pages.mount({ root: new URL('https://extensions.example/public/') });
+  await controller.completeActivation();
+
+  assert.equal((await request(app, '/app.js.map')).headers.get('content-type'), 'application/json; charset=utf-8');
+  assert.equal((await request(app, '/app.js.map', { method: 'HEAD' })).headers.get('content-type'), 'application/json; charset=utf-8');
+  assert.equal((await request(app, '/logo.svg')).headers.get('content-type'), 'image/svg+xml; charset=utf-8');
+  assert.equal((await request(app, '/logo.svg', { method: 'HEAD' })).headers.get('content-type'), 'image/svg+xml; charset=utf-8');
+  assert.equal((await request(app, '/legacy.htm')).status, 404);
+  assert.deepEqual(loads, ['/public/app.js.map', '/public/logo.svg']);
 });
 
 Deno.test('handles GET and HEAD without overriding explicit routes', async () => {
@@ -179,12 +248,15 @@ Deno.test('uses Deno text imports for HTTP assets and caches the default loader 
   app.use(router);
   const controller = createExtensionPages('example', router, () => true);
   controller.pages.mount({ root: new URL(`http://127.0.0.1:${source.addr.port}/public/`) });
-  await controller.completeActivation();
+  try {
+    await controller.completeActivation();
 
-  assert.equal(await text(await request(app, '/')), '<!doctype html><h1>HTTP</h1>');
-  assert.equal(await text(await request(app, '/')), '<!doctype html><h1>HTTP</h1>');
-  assert.equal(requests, 1);
-  await source.shutdown();
+    assert.equal(await text(await request(app, '/')), '<!doctype html><h1>HTTP</h1>');
+    assert.equal(await text(await request(app, '/')), '<!doctype html><h1>HTTP</h1>');
+    assert.equal(requests, 1);
+  } finally {
+    await source.shutdown();
+  }
 });
 
 async function request(app: Express, path: string, init: RequestInit = {}): Promise<Response> {
