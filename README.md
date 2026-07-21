@@ -44,6 +44,38 @@ see "Example with docker-compose" section for example with env parameters
 - `USER_PASSWORD` - password to restrict access to bull-board interface (disabled by default)
 - `METRICS_ENABLED` - enable Prometheus metrics endpoint (disabled by default)
 - `METRICS_VAR_*` - custom labels for Prometheus metrics (e.g., `METRICS_VAR_env=production`, `METRICS_VAR_server=1`)
+- `BULL_BOARD_EXTENSIONS` - ordered JSON array of runtime extension specifiers (disabled by default)
+
+### Runtime extensions
+
+`BULL_BOARD_EXTENSIONS` loads extensions in array order during application startup. Use absolute container paths for local extensions; when an entry names a directory, Bull Board resolves its `mod.ts` file. For example:
+
+```yaml
+services:
+  bullboard:
+    environment:
+      BULL_BOARD_EXTENSIONS: '["/extensions/example"]'
+    volumes:
+      - type: bind
+        source: ./example
+        target: /extensions/example
+        read_only: true
+```
+
+An entry may also be an object with a `specifier` and JSON `options` passed to that extension:
+
+```json
+[
+  "/extensions/first",
+  { "specifier": "/extensions/second/mod.ts", "options": { "enabled": true } }
+]
+```
+
+Extensions are trusted in-process code. They receive the raw Redis client and raw Bull/BullMQ queue registry, so they have the same data access capabilities as the application. The image currently starts with `deno run -A`; install only extensions you trust.
+
+Extensions are loaded once at startup. Changing the configuration or extension code requires an application restart, and there is no hot unload.
+
+The loader accepts `npm:`, `jsr:`, and `https:` specifiers. A raw GitHub URL should include a fixed commit, for example `https://raw.githubusercontent.com/OWNER/REPOSITORY/COMMIT/mod.ts`. Pin package versions and commits in production. Cold startup of a remote extension can require network access and writable Deno cache storage, so production images should pre-cache remote extensions in a derived image during the image build.
 
 ### Restrict access with login and password
 

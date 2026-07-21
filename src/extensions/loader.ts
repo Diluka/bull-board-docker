@@ -126,7 +126,12 @@ export async function loadExtensions(
 
   try {
     for (const [index, spec] of specs.entries()) {
-      const specifier = await resolveExtensionSpecifier(spec.specifier, dependencies.cwd);
+      let specifier: string;
+      try {
+        specifier = await resolveExtensionSpecifier(spec.specifier, dependencies.cwd);
+      } catch (error) {
+        throw extensionOperationError('resolve', index, spec.specifier, error);
+      }
       let module: unknown;
       try {
         module = await importModule(specifier);
@@ -212,6 +217,6 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function extensionOperationError(operation: 'import' | 'activate', index: number, specifier: string, cause: unknown): Error {
+function extensionOperationError(operation: 'resolve' | 'import' | 'activate', index: number, specifier: string, cause: unknown): Error {
   return new Error(`Extension at index ${index} (${specifier}) failed to ${operation}: ${errorMessage(cause)}`, { cause });
 }

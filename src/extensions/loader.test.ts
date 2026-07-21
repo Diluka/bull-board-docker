@@ -90,6 +90,14 @@ Deno.test('reports missing local extension files with their specifier', async ()
   await assert.rejects(() => resolveExtensionSpecifier('./missing.ts', cwd), /\.\/missing\.ts/);
 });
 
+Deno.test('annotates local extension resolution failures with their configuration entry', async () => {
+  const cwd = await Deno.makeTempDir();
+  await assert.rejects(
+    () => loadExtensions(dependencies({ cwd }), '["./missing-extension"]'),
+    /index 0 \(\.\/missing-extension\).*Unable to resolve extension specifier/,
+  );
+});
+
 function dependencies(overrides: Record<string, unknown> = {}) {
   return {
     redis: {} as never,
