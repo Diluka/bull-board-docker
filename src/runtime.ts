@@ -1,5 +1,20 @@
 import type { Server } from 'node:http';
 
+export interface AssembleThenListenOptions<Application, HttpServer> {
+  assemble(): Promise<Application>;
+  onAssembled?(application: Application): void;
+  listen(application: Application): Promise<HttpServer>;
+}
+
+export async function assembleThenListen<Application, HttpServer>(
+  options: AssembleThenListenOptions<Application, HttpServer>,
+): Promise<{ application: Application; server: HttpServer }> {
+  const application = await options.assemble();
+  options.onAssembled?.(application);
+  const server = await options.listen(application);
+  return { application, server };
+}
+
 export interface RefreshSchedulerOptions<AdapterType> {
   refresh(): Promise<readonly AdapterType[]>;
   replaceQueues(queues: readonly AdapterType[]): void;

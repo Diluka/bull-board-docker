@@ -10,7 +10,7 @@ import process from 'node:process';
 import { createApplication } from './app.ts';
 import config from './config.ts';
 import { QueueManager } from './queues.ts';
-import { closeHttpServer, createRefreshScheduler, createShutdown } from './runtime.ts';
+import { assembleThenListen, closeHttpServer, createRefreshScheduler, createShutdown } from './runtime.ts';
 
 const redisConfig = {
   port: config.REDIS_PORT,
@@ -56,9 +56,15 @@ let server: ReturnType<Express['listen']> | undefined;
 
 try {
   const serverAdapter = new ExpressAdapter();
-  const application = await createApplication({ config, redis: client, queues: queueManager, serverAdapter });
-  extensionLifecycle = application.extensionLifecycle;
-  server = await listen(application.app, config.PORT);
+  const started = await assembleThenListen({
+    assemble: () => createApplication({ config, redis: client, queues: queueManager, serverAdapter }),
+    onAssembled: (application) => {
+      extensionLifecycle = application.extensionLifecycle;
+    },
+    listen: (application) => listen(application.app, config.PORT),
+  });
+  const { application } = started;
+  server = started.server;
 
   const refreshScheduler = createRefreshScheduler({
     refresh: () => queueManager.refresh(),

@@ -28,13 +28,19 @@ assert.ok(cookie, 'successful login must set a session cookie');
 const extensionResponse = await request(`${extensionBase}/ext/example/`, cookie);
 assert.equal(extensionResponse.status, 200);
 const extensionPage = await extensionResponse.text();
-assert.match(extensionPage, /Queue count:\s*1/);
+assert.match(extensionPage, /<p>Queue count: 1<\/p>/);
 assert.equal((extensionPage.match(/<li>example<\/li>/g) ?? []).length, 1);
 
 const coreResponse = await request(`${extensionBase}/`, cookie);
 assert.equal(coreResponse.status, 200);
 const corePage = await coreResponse.text();
-assert.ok(corePage.includes('/app/bull-board/ext/example/'), 'Bull Board navigation must contain the extension href');
+const uiConfigScript = corePage.match(/<script\b[^>]*\bid=(["'])__UI_CONFIG__\1[^>]*>([\s\S]*?)<\/script>/i);
+assert.ok(uiConfigScript, 'Bull Board page must contain the __UI_CONFIG__ JSON script');
+const uiConfig: unknown = JSON.parse(uiConfigScript[2]);
+assert.ok(uiConfig !== null && typeof uiConfig === 'object', 'Bull Board UI config must be an object');
+assert.deepEqual('miscLinks' in uiConfig ? uiConfig.miscLinks : undefined, [
+  { text: 'Example', url: '/app/bull-board/ext/example/' },
+]);
 
 const baselineResponse = await request(`${baselineBase}/`);
 assert.equal(baselineResponse.status, 200);

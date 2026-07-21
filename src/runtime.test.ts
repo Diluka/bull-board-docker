@@ -1,7 +1,37 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 
-import { closeHttpServer, createRefreshScheduler, createShutdown } from './runtime.ts';
+import { loadExtensions } from './extensions/loader.ts';
+import { assembleThenListen, closeHttpServer, createRefreshScheduler, createShutdown } from './runtime.ts';
+
+Deno.test('startup does not call HTTP listen when extension resolution fails during assembly', async () => {
+  const cwd = await Deno.makeTempDir();
+  let listenCalls = 0;
+
+  await assert.rejects(
+    () =>
+      assembleThenListen({
+        assemble: () =>
+          loadExtensions(
+            {
+              redis: {} as never,
+              queues: { list: () => [], get: () => undefined },
+              proxyPath: '',
+              cwd,
+              mountRouter: () => {},
+              addMiscLink: () => {},
+            },
+            '["./missing-extension"]',
+          ),
+        listen: () => {
+          listenCalls++;
+          return Promise.resolve('server');
+        },
+      }),
+    /index 0 \(\.\/missing-extension\) failed to resolve/,
+  );
+  assert.equal(listenCalls, 0);
+});
 
 Deno.test('refresh scheduler shares an in-flight refresh and replaces the complete queue set once', async () => {
   let scans = 0;
