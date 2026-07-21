@@ -1,19 +1,17 @@
-import { createBullBoard } from '@bull-board/api';
 import { BullAdapter } from '@bull-board/api/bullAdapter';
 import { BullMQAdapter } from '@bull-board/api/bullMQAdapter';
 import { ExpressAdapter } from '@bull-board/express';
 import LegacyQueue, { Queue as BullQueue } from 'bull';
 import { Queue } from 'bullmq';
-import { ensureLoggedIn } from 'connect-ensure-login';
-import express, { RequestHandler } from 'express';
-import session from 'express-session';
+import type { Express } from 'express';
 import { Cluster, Redis, RedisOptions } from 'ioredis';
+import type { Server } from 'node:http';
 import process from 'node:process';
-import { clearInterval, setInterval } from 'node:timers';
-import passport from 'passport';
 
+import { createApplication } from './app.ts';
 import config from './config.ts';
-import { authRouter } from './login.ts';
+import { QueueManager } from './queues.ts';
+import { createRefreshScheduler, createShutdown } from './runtime.ts';
 
 const redisConfig = {
   port: config.REDIS_PORT,
@@ -26,12 +24,7 @@ const redisConfig = {
 function createRedisClient(): Redis | Cluster {
   return config.REDIS_IS_CLUSTER === 'true'
     ? new Cluster(
-      [
-        {
-          port: config.REDIS_PORT,
-          host: config.REDIS_HOST,
-        },
-      ],
+      [{ port: config.REDIS_PORT, host: config.REDIS_HOST }],
       {
         redisOptions: {
           password: config.REDIS_PASSWORD,
@@ -42,188 +35,94 @@ function createRedisClient(): Redis | Cluster {
     : new Redis(redisConfig);
 }
 
-const serverAdapter = new ExpressAdapter();
 const client = createRedisClient();
-const { replaceQueues, removeQueue } = createBullBoard({
-  queues: [],
-  serverAdapter,
+const isBullMQ = config.BULL_VERSION === 'BULLMQ';
+const queueManager = new QueueManager<Queue | BullQueue, BullMQAdapter | BullAdapter>({
+  client,
+  prefix: config.BULL_PREFIX,
+  version: config.BULL_VERSION,
+  createQueue: (name) =>
+    isBullMQ ? new Queue(name, { connection: client, prefix: config.BULL_PREFIX }) : new LegacyQueue(name, {
+      createClient() {
+        return client;
+      },
+      prefix: config.BULL_PREFIX,
+    }),
+  createAdapter: (queue) => isBullMQ ? new BullMQAdapter(queue as Queue) : new BullAdapter(queue as BullQueue),
 });
-const router = serverAdapter.getRouter();
 
-const queueMap = new Map<string, Queue | BullQueue>();
+let extensionLifecycle: Awaited<ReturnType<typeof createApplication>>['extensionLifecycle'] | undefined;
+let server: Server | undefined;
 
-async function getQueueNames(): Promise<string[]> {
-  const isBullMQ = (): boolean => config.BULL_VERSION === 'BULLMQ';
-  const suffix = isBullMQ() ? 'meta' : 'id';
-  const keys = await client.keys(`${config.BULL_PREFIX}:*:${suffix}`);
-  const uniqKeys = new Set(
-    keys
-      // ':' may contain in BULL_PREFIX
-      .map((key: string) => key.replace(config.BULL_PREFIX, 'bull'))
-      .map((key: string) => key.replace(new RegExp(`^.+?:(.+?):${suffix}$`), '$1')),
-  );
-  const actualQueues = Array.from(uniqKeys).sort();
-  return actualQueues;
-}
+try {
+  const serverAdapter = new ExpressAdapter();
+  const application = await createApplication({ config, redis: client, queues: queueManager, serverAdapter });
+  extensionLifecycle = application.extensionLifecycle;
+  server = await listen(application.app, config.PORT);
 
-async function updateQueues(): Promise<void> {
-  const isBullMQ = (): boolean => config.BULL_VERSION === 'BULLMQ';
-  const actualQueues = await getQueueNames();
-
-  for (const queueName of actualQueues) {
-    if (!queueMap.has(queueName)) {
-      queueMap.set(
-        queueName,
-        isBullMQ()
-          ? new Queue(queueName, {
-            connection: client,
-            prefix: config.BULL_PREFIX,
-          })
-          : new LegacyQueue(queueName, {
-            createClient() {
-              return client;
-            },
-            prefix: config.BULL_PREFIX,
-          }),
-      );
-    }
-  }
-
-  for (const [queueName, queue] of queueMap.entries()) {
-    if (!actualQueues.includes(queueName)) {
-      await queue.close();
-      queueMap.delete(queueName);
-    }
-  }
-
-  const adapters = [];
-  for (const queue of queueMap.values()) {
-    adapters.push(
-      isBullMQ() ? new BullMQAdapter(queue as Queue) : new BullAdapter(queue as BullQueue),
-    );
-  }
-
-  replaceQueues(adapters);
-}
-
-await updateQueues();
-
-serverAdapter.setBasePath(config.PROXY_PATH);
-
-const app = express();
-
-app.set('views', import.meta.dirname + '/views');
-app.set('view engine', 'ejs');
-
-if (app.get('env') !== 'production') {
-  console.log('bull-board config:', config);
-  const { default: morgan } = await import('morgan');
-  app.use(morgan('combined'));
-}
-
-const sessionOpts = {
-  name: 'bull-board.sid',
-  secret: Math.random().toString(),
-  resave: false,
-  saveUninitialized: false,
-  cookie: {
-    path: '/',
-    httpOnly: false,
-    secure: false,
-  },
-};
-
-app.use(session(sessionOpts));
-app.use(passport.initialize());
-app.use(passport.session());
-app.use(express.urlencoded({ extended: true }));
-
-// Prometheus metrics endpoint - must be defined BEFORE ensureLoggedIn middleware
-if (config.METRICS_ENABLED) {
-  const metricsAuth: RequestHandler = config.AUTH_ENABLED ? passport.authenticate('basic') : (_req, _res, next) => next();
-
-  // All queues metrics
-  app.get(`${config.PROXY_PATH}/metrics`, metricsAuth, async (req, res) => {
-    try {
-      const allMetrics: string[] = [];
-      for (const [name, queue] of queueMap.entries()) {
-        if (queue instanceof Queue) {
-          const metrics = await queue.exportPrometheusMetrics(config.METRICS_VARS);
-          allMetrics.push(metrics);
-        }
-      }
-
-      if (allMetrics.length === 0) {
-        res.status(404).send('No BullMQ queues found');
-        return;
-      }
-
-      res.set('Content-Type', 'text/plain');
-      res.send(allMetrics.join('\n'));
-    } catch (err) {
-      res.status(500).send(`Error: ${err instanceof Error ? err.message : 'Unknown error'}`);
-    }
+  const refreshScheduler = createRefreshScheduler({
+    refresh: () => queueManager.refresh(),
+    replaceQueues: application.replaceQueues,
+    onError: (error) => console.error('failed to refresh queues:', error),
   });
+  refreshScheduler.start();
 
-  // Specific queue metrics
-  app.get<{ queueName: string }>(`${config.PROXY_PATH}/metrics/:queueName`, metricsAuth, async (req, res) => {
-    try {
-      const { queueName } = req.params;
-      const queue = queueMap.get(queueName);
+  const shutdown = createShutdown({
+    stopRefresh: () => refreshScheduler.stop(),
+    closeServer: () => closeServer(server!),
+    disposeExtensions: () => extensionLifecycle!.dispose(),
+    closeQueues: () => queueManager.close(),
+    disconnectRedis,
+    onError: (stage, error) => console.error(`failed to shut down ${stage}:`, error),
+  });
+  const handleSignal = () => {
+    console.log('shutting down...');
+    void shutdown().then(() => console.log('bye'));
+  };
+  process.once('SIGINT', handleSignal);
+  process.once('SIGTERM', handleSignal);
 
-      if (!queue) {
-        res.status(404).send(`Queue "${queueName}" not found`);
-        return;
-      }
+  console.log(`bull-board is started http://localhost:${config.PORT}${config.HOME_PAGE}`);
+  console.log('bull-board is fetching queue list, please wait...');
+} catch (error) {
+  if (server) await cleanup('server', () => closeServer(server!));
+  if (extensionLifecycle) await cleanup('extensions', () => extensionLifecycle!.dispose());
+  await cleanup('queues', () => queueManager.close());
+  await cleanup('redis', disconnectRedis);
+  throw error;
+}
 
-      if (queue instanceof Queue) {
-        const metrics = await queue.exportPrometheusMetrics(config.METRICS_VARS);
-        res.set('Content-Type', 'text/plain');
-        res.send(metrics);
-      } else {
-        res.status(400).send('Metrics only available for BullMQ queues');
-      }
-    } catch (err) {
-      res.status(500).send(`Error: ${err instanceof Error ? err.message : 'Unknown error'}`);
-    }
+function listen(app: Express, port: number): Promise<Server> {
+  return new Promise((resolve, reject) => {
+    const listeningServer = app.listen(port);
+    const onError = (error: Error) => {
+      listeningServer.off('listening', onListening);
+      reject(error);
+    };
+    const onListening = () => {
+      listeningServer.off('error', onError);
+      resolve(listeningServer);
+    };
+    listeningServer.once('error', onError);
+    listeningServer.once('listening', onListening);
   });
 }
 
-if (config.AUTH_ENABLED) {
-  app.use(config.LOGIN_PAGE, authRouter);
-  app.use(config.HOME_PAGE, ensureLoggedIn(config.PROXY_LOGIN_PAGE), router);
-} else {
-  app.use(config.HOME_PAGE, router);
+function closeServer(listeningServer: Server): Promise<void> {
+  return new Promise((resolve, reject) => {
+    listeningServer.close((error) => error ? reject(error) : resolve());
+  });
 }
 
-let updateQueuesInterval: NodeJS.Timeout | null = null;
-
-const gracefullyShutdown = async () => {
-  console.log('shutting down...');
-  if (updateQueuesInterval) {
-    clearInterval(updateQueuesInterval);
+async function cleanup(stage: string, action: () => Promise<void>): Promise<void> {
+  try {
+    await action();
+  } catch (error) {
+    console.error(`failed to clean up ${stage}:`, error);
   }
-  console.log('closing queues...');
-  for (const queue of queueMap.values()) {
-    removeQueue(queue.name);
-    await queue.close();
-  }
-  console.log('closing redis...');
-  await client.disconnect();
-  console.log('closing server...');
-  server.close();
-  console.log('bye');
-  process.exit();
-};
+}
 
-const server = app.listen(config.PORT, () => {
-  console.log(
-    `bull-board is started http://localhost:${config.PORT}${config.HOME_PAGE}`,
-  );
-  console.log(`bull-board is fetching queue list, please wait...`);
-
-  // poor man queue update process
-  updateQueuesInterval = setInterval(updateQueues, 60 * 1000);
-  process.on('SIGINT', gracefullyShutdown);
-  process.on('SIGTERM', gracefullyShutdown);
-});
+function disconnectRedis(): Promise<void> {
+  client.disconnect();
+  return Promise.resolve();
+}
