@@ -1,24 +1,29 @@
 import assert from 'node:assert/strict';
 
-Deno.test('acceptance rejects a queue count of 10 instead of matching its leading 1', async () => {
-  const result = await runAcceptanceFixture({
-    extensionPage: '<p>Queue count: 10</p><ul><li>example</li></ul>',
+Deno.test('acceptance requires the exact queue API JSON', async () => {
+  const exact = await runAcceptanceFixture({
+    queuePayload: { queueCount: 1, queues: ['example'] },
     miscLinks: [{ text: 'Example', url: '/app/bull-board/ext/example/' }],
   });
+  assert.equal(exact.success, true, new TextDecoder().decode(exact.stderr));
 
-  assert.equal(result.success, false, 'queue count 10 must not satisfy the exact count 1 contract');
-  assert.match(new TextDecoder().decode(result.stderr), /Queue count: 1/);
+  const wrongCount = await runAcceptanceFixture({
+    queuePayload: { queueCount: 10, queues: ['example'] },
+    miscLinks: [{ text: 'Example', url: '/app/bull-board/ext/example/' }],
+  });
+  assert.equal(wrongCount.success, false, 'queue count 10 must not satisfy the exact count 1 contract');
+  assert.match(new TextDecoder().decode(wrongCount.stderr), /queueCount/);
 });
 
 Deno.test('acceptance requires exactly the Example navigation link from UI config', async () => {
   const exact = await runAcceptanceFixture({
-    extensionPage: '<p>Queue count: 1</p><ul><li>example</li></ul>',
+    queuePayload: { queueCount: 1, queues: ['example'] },
     miscLinks: [{ text: 'Example', url: '/app/bull-board/ext/example/' }],
   });
   assert.equal(exact.success, true, new TextDecoder().decode(exact.stderr));
 
   const wrongAndExtra = await runAcceptanceFixture({
-    extensionPage: '<p>Queue count: 1</p><ul><li>example</li></ul>',
+    queuePayload: { queueCount: 1, queues: ['example'] },
     miscLinks: [
       { text: 'Not Example', url: '/app/bull-board/ext/example/' },
       { text: 'Extra', url: '/extra/' },
@@ -29,7 +34,7 @@ Deno.test('acceptance requires exactly the Example navigation link from UI confi
 });
 
 interface AcceptanceFixture {
-  extensionPage: string;
+  queuePayload: unknown;
   miscLinks: unknown[];
 }
 
@@ -60,8 +65,23 @@ async function extensionResponse(request: Request, fixture: AcceptanceFixture): 
       ? redirect('/app/bull-board/', { 'set-cookie': 'session=valid; Path=/' })
       : redirect('/app/bull-board/login');
   }
+  if (url.pathname.startsWith('/ext/example/') && request.headers.get('cookie') !== 'session=valid') {
+    return redirect('/app/bull-board/login');
+  }
   if (url.pathname === '/ext/example/') {
-    return request.headers.get('cookie') === 'session=valid' ? new Response(fixture.extensionPage) : redirect('/app/bull-board/login');
+    return new Response(
+      '<link rel="stylesheet" href="./styles.css"><script src="./app.js"></script>',
+      { headers: { 'content-type': 'text/html; charset=utf-8' } },
+    );
+  }
+  if (url.pathname === '/ext/example/app.js') {
+    return new Response("fetch('./api/queues')", { headers: { 'content-type': 'text/javascript; charset=utf-8' } });
+  }
+  if (url.pathname === '/ext/example/styles.css') {
+    return new Response('body {}', { headers: { 'content-type': 'text/css; charset=utf-8' } });
+  }
+  if (url.pathname === '/ext/example/api/queues') {
+    return Response.json(fixture.queuePayload);
   }
   if (url.pathname === '/') {
     const config = JSON.stringify({ miscLinks: fixture.miscLinks });

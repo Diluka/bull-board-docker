@@ -8,9 +8,12 @@ const password = Deno.env.get('TEST_USER_PASSWORD') ?? 'test-password';
 await waitUntilReachable(`${extensionBase}/ext/example/`);
 await waitUntilReachable(`${baselineBase}/`);
 
-const unauthenticated = await request(`${extensionBase}/ext/example/`);
-assert.equal(unauthenticated.status, 302);
-assert.equal(unauthenticated.headers.get('location'), '/app/bull-board/login');
+const unauthenticatedPage = await request(`${extensionBase}/ext/example/`);
+assert.equal(unauthenticatedPage.status, 302);
+assert.equal(unauthenticatedPage.headers.get('location'), '/app/bull-board/login');
+const unauthenticatedApi = await request(`${extensionBase}/ext/example/api/queues`);
+assert.equal(unauthenticatedApi.status, 302);
+assert.equal(unauthenticatedApi.headers.get('location'), '/app/bull-board/login');
 
 const wrongLogin = await loginRequest('wrong-password');
 assert.equal(wrongLogin.status, 302);
@@ -27,9 +30,23 @@ assert.ok(cookie, 'successful login must set a session cookie');
 
 const extensionResponse = await request(`${extensionBase}/ext/example/`, cookie);
 assert.equal(extensionResponse.status, 200);
+assert.equal(extensionResponse.headers.get('content-type'), 'text/html; charset=utf-8');
 const extensionPage = await extensionResponse.text();
-assert.match(extensionPage, /<p>Queue count: 1<\/p>/);
-assert.equal((extensionPage.match(/<li>example<\/li>/g) ?? []).length, 1);
+assert.match(extensionPage, /href=["']\.\/styles\.css["']/);
+assert.match(extensionPage, /src=["']\.\/app\.js["']/);
+
+const scriptResponse = await request(`${extensionBase}/ext/example/app.js`, cookie);
+assert.equal(scriptResponse.status, 200);
+assert.equal(scriptResponse.headers.get('content-type'), 'text/javascript; charset=utf-8');
+assert.match(await scriptResponse.text(), /fetch\(["']\.\/api\/queues["']\)/);
+
+const stylesheetResponse = await request(`${extensionBase}/ext/example/styles.css`, cookie);
+assert.equal(stylesheetResponse.status, 200);
+assert.equal(stylesheetResponse.headers.get('content-type'), 'text/css; charset=utf-8');
+
+const queuesResponse = await request(`${extensionBase}/ext/example/api/queues`, cookie);
+assert.equal(queuesResponse.status, 200);
+assert.deepEqual(await queuesResponse.json(), { queueCount: 1, queues: ['example'] });
 
 const coreResponse = await request(`${extensionBase}/`, cookie);
 assert.equal(coreResponse.status, 200);
@@ -46,7 +63,7 @@ const baselineResponse = await request(`${baselineBase}/`);
 assert.equal(baselineResponse.status, 200);
 assert.match(await baselineResponse.text(), /Bull Dashboard/i);
 
-console.log('extension authentication, queue page, navigation, and no-extension baseline passed');
+console.log('extension authentication, static page assets, queue API, navigation, and no-extension baseline passed');
 
 function request(url: string, cookie?: string): Promise<Response> {
   return fetch(url, {

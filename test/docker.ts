@@ -13,7 +13,7 @@ try {
     'sh',
     'bull-board',
     '-c',
-    'test ! -e /usr/app/example',
+    'test ! -e /usr/app/extensions',
   ]);
   await compose([
     'run',
