@@ -97,6 +97,7 @@ function dependencies(overrides: Record<string, unknown> = {}) {
     proxyPath: '/proxy',
     createRouter: () => ({}) as never,
     mountRouter: () => {},
+    addMiscLink: () => {},
     importModule: () => Promise.resolve({ default: { id: 'valid', apiVersion: 1, activate: () => {} } }),
     ...overrides,
   };
@@ -148,7 +149,7 @@ Deno.test('activates extensions serially with isolated routers and context-bound
           await Promise.resolve();
           events.push('second');
           routers.push(context.router);
-          assert.equal(context.url('runs'), '/proxy/ext/second/runs');
+          assert.equal(context.url('/runs'), '/proxy/ext/second/runs');
         },
       },
     }],
@@ -167,6 +168,70 @@ Deno.test('activates extensions serially with isolated routers and context-bound
   assert.notEqual(routers[0], routers[1]);
   assert.deepEqual(mounts, ['/ext/first', '/ext/second']);
   assert.deepEqual(links, [{ text: 'First', url: '/proxy/ext/first/jobs' }]);
+});
+
+Deno.test('keeps extension URLs rooted while preserving query and fragment', async () => {
+  await loadExtensions(
+    dependencies({
+      importModule: () =>
+        Promise.resolve({
+          default: {
+            id: 'safe',
+            apiVersion: 1,
+            activate(context: ExtensionContext) {
+              assert.equal(context.url('/../../outside?tab=jobs#top'), '/proxy/ext/safe/outside?tab=jobs#top');
+            },
+          },
+        }),
+    }),
+    '["npm:safe"]',
+  );
+});
+
+Deno.test('rejects links added after activation has completed', async () => {
+  let context: ExtensionContext | undefined;
+  await loadExtensions(
+    dependencies({
+      importModule: () =>
+        Promise.resolve({
+          default: {
+            id: 'late-link',
+            apiVersion: 1,
+            activate(extensionContext: ExtensionContext) {
+              context = extensionContext;
+            },
+          },
+        }),
+    }),
+    '["npm:late-link"]',
+  );
+  const activatedContext = context;
+  assert.ok(activatedContext);
+  assert.throws(() => activatedContext.addLink({ text: 'Late', path: '/late' }), /only add links while activating/);
+});
+
+Deno.test('rolls back mounted extensions when mounting a later router fails', async () => {
+  const events: string[] = [];
+  let mounts = 0;
+  const modules = new Map([
+    ['npm:a', { default: { id: 'a', apiVersion: 1, activate: () => () => events.push('dispose-a') } }],
+    ['npm:b', { default: { id: 'b', apiVersion: 1, activate: () => () => events.push('dispose-b') } }],
+  ]);
+  await assert.rejects(
+    () =>
+      loadExtensions(
+        dependencies({
+          importModule: (specifier: string) => Promise.resolve(modules.get(specifier)),
+          mountRouter: () => {
+            mounts++;
+            if (mounts === 2) throw new Error('mount failed');
+          },
+        }),
+        '["npm:a", "npm:b"]',
+      ),
+    /mount failed/,
+  );
+  assert.deepEqual(events, ['dispose-b', 'dispose-a']);
 });
 
 Deno.test('rolls back activated extensions in reverse order and dispose remains idempotent', async () => {
@@ -206,6 +271,67 @@ Deno.test('rolls back activated extensions in reverse order and dispose remains 
   assert.deepEqual(events, ['dispose-b', 'dispose-a', 'dispose-done']);
 });
 
+Deno.test('rejects invalid activate returns with extension identity and rolls back', async () => {
+  const events: string[] = [];
+  const modules = new Map([
+    ['npm:a', { default: { id: 'a', apiVersion: 1, activate: () => () => events.push('dispose-a') } }],
+    ['npm:b', { default: { id: 'b', apiVersion: 1, activate: () => 'invalid' } }],
+  ]);
+
+  await assert.rejects(
+    () =>
+      loadExtensions(
+        dependencies({ importModule: (specifier: string) => Promise.resolve(modules.get(specifier)) }),
+        '["npm:a", "npm:b"]',
+      ),
+    /index 1 \(npm:b\).*id "b"/,
+  );
+  assert.deepEqual(events, ['dispose-a']);
+});
+
+Deno.test('annotates module import failures with their configuration entry', async () => {
+  await assert.rejects(
+    () =>
+      loadExtensions(
+        dependencies({ importModule: () => Promise.reject(new Error('module unavailable')) }),
+        '[{"specifier":"npm:missing", "options":{"secret":"do-not-print"}}]',
+      ),
+    (error) => {
+      assert.ok(error instanceof Error);
+      assert.match(error.message, /index 0 \(npm:missing\).*module unavailable/);
+      assert.doesNotMatch(error.message, /do-not-print/);
+      return true;
+    },
+  );
+});
+
+Deno.test('annotates activation failures with their configuration entry', async () => {
+  await assert.rejects(
+    () =>
+      loadExtensions(
+        dependencies({
+          importModule: () =>
+            Promise.resolve({
+              default: {
+                id: 'broken',
+                apiVersion: 1,
+                activate: () => {
+                  throw new Error('activation exploded');
+                },
+              },
+            }),
+        }),
+        '[{"specifier":"npm:broken", "options":{"secret":"do-not-print"}}]',
+      ),
+    (error) => {
+      assert.ok(error instanceof Error);
+      assert.match(error.message, /index 0 \(npm:broken\).*activation exploded/);
+      assert.doesNotMatch(error.message, /do-not-print/);
+      return true;
+    },
+  );
+});
+
 Deno.test('continues disposal after failures and reports all disposer errors', async () => {
   const events: string[] = [];
   let number = 0;
@@ -230,4 +356,39 @@ Deno.test('continues disposal after failures and reports all disposer errors', a
   );
   await assert.rejects(() => lifecycle.dispose(), AggregateError);
   assert.deepEqual(events, ['extension-2', 'extension-1']);
+});
+
+Deno.test('shares one in-flight disposal promise and its failure with concurrent callers', async () => {
+  const events: string[] = [];
+  let release!: () => void;
+  const blocked = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const lifecycle = await loadExtensions(
+    dependencies({
+      importModule: () =>
+        Promise.resolve({
+          default: {
+            id: 'blocked',
+            apiVersion: 1,
+            activate: () => async () => {
+              events.push('start');
+              await blocked;
+              events.push('finish');
+              throw new Error('dispose failed');
+            },
+          },
+        }),
+    }),
+    '["npm:blocked"]',
+  );
+
+  const first = lifecycle.dispose();
+  const second = lifecycle.dispose();
+  assert.equal(first, second);
+  release();
+  await assert.rejects(() => first, AggregateError);
+  await assert.rejects(() => second, AggregateError);
+  assert.equal(lifecycle.dispose(), first);
+  assert.deepEqual(events, ['start', 'finish']);
 });

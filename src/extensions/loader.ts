@@ -21,8 +21,8 @@ export interface ExtensionLoaderDependencies {
   proxyPath: string;
   cwd?: string;
   createRouter?: () => Router;
-  mountRouter?: (mountPath: string, router: Router) => void;
-  addMiscLink?: (link: IMiscLink) => void;
+  mountRouter: (mountPath: string, router: Router) => void;
+  addMiscLink: (link: IMiscLink) => void;
   importModule?: (specifier: string) => Promise<unknown>;
 }
 
@@ -106,36 +106,53 @@ export async function loadExtensions(
   const importModule = dependencies.importModule ?? ((specifier: string) => import(specifier));
   const activated: ExtensionDisposer[] = [];
   const ids = new Set<string>();
-  let disposed = false;
+  let disposePromise: Promise<void> | undefined;
 
-  const dispose = async (): Promise<void> => {
-    if (disposed) return;
-    disposed = true;
-    const errors: unknown[] = [];
-    for (const disposer of activated.reverse()) {
-      try {
-        await disposer();
-      } catch (error) {
-        errors.push(error);
+  const dispose = (): Promise<void> => {
+    if (disposePromise) return disposePromise;
+    disposePromise = (async () => {
+      const errors: unknown[] = [];
+      for (const disposer of activated.reverse()) {
+        try {
+          await disposer();
+        } catch (error) {
+          errors.push(error);
+        }
       }
-    }
-    if (errors.length > 0) throw new AggregateError(errors, 'Failed to dispose extensions');
+      if (errors.length > 0) throw new AggregateError(errors, 'Failed to dispose extensions');
+    })();
+    return disposePromise;
   };
 
   try {
     for (const [index, spec] of specs.entries()) {
       const specifier = await resolveExtensionSpecifier(spec.specifier, dependencies.cwd);
-      const extension = validateExtension(await importModule(specifier), index, spec.specifier);
+      let module: unknown;
+      try {
+        module = await importModule(specifier);
+      } catch (error) {
+        throw extensionOperationError('import', index, spec.specifier, error);
+      }
+      const extension = validateExtension(module, index, spec.specifier);
       if (ids.has(extension.id)) throw new Error(`Duplicate extension id "${extension.id}" at index ${index} (${spec.specifier})`);
       ids.add(extension.id);
 
       let activating = true;
       const router = createRouter();
       const context = createContext(dependencies, extension.id, router, () => activating);
-      const result = await extension.activate(context, spec.options);
+      let result: void | ExtensionDisposer;
+      try {
+        result = await extension.activate(context, spec.options);
+      } catch (error) {
+        activating = false;
+        throw extensionOperationError('activate', index, spec.specifier, error);
+      }
       activating = false;
+      if (result !== undefined && typeof result !== 'function') {
+        throw new Error(`Extension at index ${index} (${spec.specifier}) with id "${extension.id}" returned an invalid activate result`);
+      }
       if (typeof result === 'function') activated.push(result);
-      dependencies.mountRouter?.(`/ext/${extension.id}`, router);
+      dependencies.mountRouter(`/ext/${extension.id}`, router);
     }
   } catch (error) {
     try {
@@ -175,7 +192,7 @@ function createContext(
     url: (path) => extensionUrl(dependencies.proxyPath, id, path),
     addLink: ({ text, path }) => {
       if (!isActivating()) throw new Error(`Extension "${id}" can only add links while activating`);
-      dependencies.addMiscLink?.({ text, url: extensionUrl(dependencies.proxyPath, id, path) });
+      dependencies.addMiscLink({ text, url: extensionUrl(dependencies.proxyPath, id, path) });
     },
   };
 }
@@ -191,4 +208,8 @@ function extensionUrl(proxyPath: string, id: string, extensionPath: string): str
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function extensionOperationError(operation: 'import' | 'activate', index: number, specifier: string, cause: unknown): Error {
+  return new Error(`Extension at index ${index} (${specifier}) failed to ${operation}: ${errorMessage(cause)}`, { cause });
 }

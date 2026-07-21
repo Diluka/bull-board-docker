@@ -8,13 +8,13 @@ export type JsonValue = null | boolean | number | string | JsonValue[] | { [key:
 export type RawQueue = BullQueue | Queue;
 
 export interface ExtensionQueues {
-  list(): RawQueue[];
+  list(): readonly RawQueue[];
   get(name: string): RawQueue | undefined;
 }
 
 export interface ExtensionLink {
   text: string;
-  path: string;
+  path: `/${string}`;
 }
 
 export interface ExtensionContext {
@@ -22,7 +22,7 @@ export interface ExtensionContext {
   queues: ExtensionQueues;
   router: Router;
   proxyPath: string;
-  url(path: string): string;
+  url(path: `/${string}`): string;
   addLink(link: ExtensionLink): void;
 }
 
