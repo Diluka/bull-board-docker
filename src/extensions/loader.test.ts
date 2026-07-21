@@ -170,7 +170,7 @@ Deno.test('activates extensions serially with isolated routers and context-bound
   assert.deepEqual(links, [{ text: 'First', url: '/proxy/ext/first/jobs' }]);
 });
 
-Deno.test('keeps extension URLs rooted while preserving query and fragment', async () => {
+Deno.test('keeps extension URLs rooted while preserving query, fragment, and encoded filenames', async () => {
   await loadExtensions(
     dependencies({
       importModule: () =>
@@ -179,13 +179,71 @@ Deno.test('keeps extension URLs rooted while preserving query and fragment', asy
             id: 'safe',
             apiVersion: 1,
             activate(context: ExtensionContext) {
-              assert.equal(context.url('/../../outside?tab=jobs#top'), '/proxy/ext/safe/outside?tab=jobs#top');
+              assert.equal(context.url('/jobs'), '/proxy/ext/safe/jobs');
+              assert.equal(context.url('/'), '/proxy/ext/safe/');
+              assert.equal(context.url('/reports/%2efile%20name?tab=jobs#top'), '/proxy/ext/safe/reports/%2efile%20name?tab=jobs#top');
             },
           },
         }),
     }),
     '["npm:safe"]',
   );
+});
+
+Deno.test('rejects extension URLs that WHATWG normalizes outside the extension mount', async () => {
+  await loadExtensions(
+    dependencies({
+      importModule: () =>
+        Promise.resolve({
+          default: {
+            id: 'safe',
+            apiVersion: 1,
+            activate(context: ExtensionContext) {
+              for (
+                const path of [
+                  '/%2e%2e/%2e%2e/metrics',
+                  '/%2E%2E/%2E%2E/metrics',
+                  '/.%2e/metrics',
+                  '/%2e./metrics',
+                  '/../metrics',
+                  '/..\\metrics',
+                  'https://attacker.example/metrics',
+                ]
+              ) {
+                assert.throws(() => context.url(path as `/${string}`), /Extension URL .* escapes extension mount/);
+              }
+            },
+          },
+        }),
+    }),
+    '["npm:safe"]',
+  );
+});
+
+Deno.test('rejects unsafe links during activation and rolls back earlier extensions', async () => {
+  const events: string[] = [];
+  const modules = new Map([
+    ['npm:first', { default: { id: 'first', apiVersion: 1, activate: () => () => events.push('dispose-first') } }],
+    ['npm:unsafe', {
+      default: {
+        id: 'unsafe',
+        apiVersion: 1,
+        activate(context: ExtensionContext) {
+          context.addLink({ text: 'Metrics', path: '/%2e%2e/%2e%2e/metrics' });
+        },
+      },
+    }],
+  ]);
+
+  await assert.rejects(
+    () =>
+      loadExtensions(
+        dependencies({ importModule: (specifier: string) => Promise.resolve(modules.get(specifier)) }),
+        '["npm:first", "npm:unsafe"]',
+      ),
+    /index 1 \(npm:unsafe\).*Extension URL .* escapes extension mount/,
+  );
+  assert.deepEqual(events, ['dispose-first']);
 });
 
 Deno.test('rejects links added after activation has completed', async () => {

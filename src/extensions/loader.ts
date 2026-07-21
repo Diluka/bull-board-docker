@@ -198,12 +198,14 @@ function createContext(
 }
 
 function extensionUrl(proxyPath: string, id: string, extensionPath: string): string {
-  const base = posix.join('/', proxyPath, 'ext', id);
-  const suffixStart = extensionPath.search(/[?#]/);
-  const pathname = suffixStart === -1 ? extensionPath : extensionPath.slice(0, suffixStart);
-  const suffix = suffixStart === -1 ? '' : extensionPath.slice(suffixStart);
-  const normalized = posix.normalize(`/${pathname}`).replace(/^\/+/, '');
-  return `${base}/${normalized}${suffix}`;
+  const mountRoot = `${posix.join('/', proxyPath, 'ext', id)}/`;
+  const origin = 'https://bull-board-extension.invalid';
+  const base = new URL(mountRoot, origin);
+  const url = new URL(extensionPath.startsWith('/') ? extensionPath.slice(1) : extensionPath, base);
+  if (url.origin !== base.origin || !url.pathname.startsWith(mountRoot)) {
+    throw new Error(`Extension URL "${extensionPath}" escapes extension mount "${mountRoot}"`);
+  }
+  return `${url.pathname}${url.search}${url.hash}`;
 }
 
 function errorMessage(error: unknown): string {
