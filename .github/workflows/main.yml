@@ -25,10 +25,10 @@ jobs:
           cache: true
 
       - name: Cache dependencies
-        run: deno cache --frozen --node-modules-dir=none src/*.ts src/extensions/*.ts extensions/example/*.ts test/*.ts
+        run: deno cache --frozen --node-modules-dir=none src/*.ts src/extensions/*.ts extensions/*/*.ts extensions/*/public/*.ts test/*.ts
 
       - name: Check TypeScript
-        run: deno check --frozen --node-modules-dir=none src/*.ts src/extensions/*.ts extensions/example/*.ts test/*.ts
+        run: deno check --frozen --node-modules-dir=none src/*.ts src/extensions/*.ts extensions/*/*.ts extensions/*/public/*.ts test/*.ts
 
       - name: Lint code
         run: deno lint src/ extensions/ test/

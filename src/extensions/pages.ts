@@ -1,6 +1,7 @@
 import type { NextFunction, Request, Response, Router } from 'express';
 
 import type { ExtensionPageMountOptions, ExtensionPages } from './api.ts';
+import { bundleBrowserTypeScript } from './browser-typescript.ts';
 
 const mediaTypes = Object.freeze({
   '.css': 'text/css',
@@ -11,9 +12,11 @@ const mediaTypes = Object.freeze({
   '.mjs': 'text/javascript',
   '.svg': 'image/svg+xml',
   '.txt': 'text/plain',
+  '.ts': 'text/javascript',
 });
 
 export interface ExtensionPagesDependencies {
+  bundleTypeScript?(url: URL): Promise<string>;
   loadText?(url: URL): Promise<string>;
 }
 
@@ -33,6 +36,7 @@ export function createExtensionPages(
   isActivating: () => boolean,
   dependencies: ExtensionPagesDependencies = {},
 ): ExtensionPagesController {
+  const bundleTypeScript = dependencies.bundleTypeScript ?? bundleBrowserTypeScript;
   const loadText = dependencies.loadText ?? defaultLoadText;
   const assets = new Map<string, Promise<string>>();
   let mounted: MountedPages | undefined;
@@ -42,7 +46,7 @@ export function createExtensionPages(
     const existing = assets.get(url.href);
     if (existing !== undefined) return existing;
 
-    const loading = Promise.resolve().then(() => loadText(url));
+    const loading = Promise.resolve().then(() => isTypeScript(url) ? bundleTypeScript(url) : loadText(url));
     assets.set(url.href, loading);
     void loading.catch(() => {
       if (assets.get(url.href) === loading) assets.delete(url.href);
@@ -112,7 +116,7 @@ function serveAsset(
 
   void loadAsset(url).then(
     (text) => response.type(mediaType).send(text),
-    () => next(),
+    (error) => isTypeScript(url) ? next(error) : next(),
   );
 }
 
@@ -148,6 +152,10 @@ function isWithinRoot(url: URL, root: URL): boolean {
 function mediaTypeFor(pathname: string): string | undefined {
   const extension = pathname.slice(pathname.lastIndexOf('.')).toLowerCase();
   return mediaTypes[extension as keyof typeof mediaTypes];
+}
+
+function isTypeScript(url: URL): boolean {
+  return url.pathname.toLowerCase().endsWith('.ts');
 }
 
 async function defaultLoadText(url: URL): Promise<string> {

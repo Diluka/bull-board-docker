@@ -18,7 +18,9 @@ export interface ExtensionLink {
 }
 
 export interface ExtensionPageMountOptions {
+  /** A trailing-slash file, HTTP, or HTTPS URL containing the page assets. */
   root: URL;
+  /** Assets loaded before listening; TypeScript entries are bundled for the browser. */
   preload?: readonly string[];
 }
 

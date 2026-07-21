@@ -25,7 +25,9 @@ try {
     'check',
     '--frozen',
     '--config=/usr/app/deno.json',
-    '/extensions/example/mod.ts',
+    '/extensions/example-js/mod.ts',
+    '/extensions/example-ts/mod.ts',
+    '/extensions/example-ts/public/app.ts',
   ]);
   await compose(['up', '-d', 'bull-board', 'bull-board-baseline']);
   await compose(['run', '--rm', '--no-deps', 'acceptance']);
@@ -35,6 +37,16 @@ try {
   assert.match(invalid.output, /Extension at index 0 \(\/extensions\/missing\) failed to resolve/);
   assert.doesNotMatch(invalid.output, /bull-board is started/, 'invalid extension startup must fail before HTTP listening');
   console.log('invalid extension failed before HTTP listening with index and specifier diagnostics');
+
+  const invalidTypeScript = await compose(['run', '--rm', '--no-deps', 'invalid-typescript-extension'], false);
+  assert.notEqual(invalidTypeScript.code, 0, 'preloaded TypeScript compilation failure must exit non-zero');
+  assert.match(
+    invalidTypeScript.output,
+    /Extension at index 0 \(\/extensions\/invalid-typescript\) with id "invalid-typescript" failed to preload pages/,
+  );
+  assert.match(invalidTypeScript.output, /Unable to bundle TypeScript page .*app\.ts/);
+  assert.doesNotMatch(invalidTypeScript.output, /bull-board is started/, 'TypeScript preload failure must happen before HTTP listening');
+  console.log('invalid preloaded TypeScript failed before HTTP listening with bundle diagnostics');
 } finally {
   await compose(['down', '--volumes', '--remove-orphans']);
 }

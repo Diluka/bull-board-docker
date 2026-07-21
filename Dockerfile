@@ -12,6 +12,9 @@ RUN deno install
 # Copy source code
 COPY ./src ./src
 
+RUN deno bundle --no-config --no-lock --platform browser --format esm --allow-import \
+  ./src/extensions/browser-typescript.ts > /dev/null
+
 # Environment variables
 ENV NODE_ENV=production
 ENV REDIS_HOST=localhost

@@ -39,11 +39,15 @@ services:
       NODE_ENV: test
       USER_LOGIN: test-user
       USER_PASSWORD: test-password
-      BULL_BOARD_EXTENSIONS: '["/extensions/example"]'
+      BULL_BOARD_EXTENSIONS: '["/extensions/example-js","/extensions/example-ts"]'
     volumes:
       - type: bind
-        source: ./extensions/example
-        target: /extensions/example
+        source: ./extensions/example-js
+        target: /extensions/example-js
+        read_only: true
+      - type: bind
+        source: ./extensions/example-ts
+        target: /extensions/example-ts
         read_only: true
     depends_on:
       redis:
@@ -84,6 +88,22 @@ services:
       PORT: 80
       NODE_ENV: test
       BULL_BOARD_EXTENSIONS: '["/extensions/missing"]'
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  invalid-typescript-extension:
+    image: bull-board-docker:test
+    environment:
+      REDIS_HOST: redis
+      PORT: 80
+      NODE_ENV: test
+      BULL_BOARD_EXTENSIONS: '["/extensions/invalid-typescript"]'
+    volumes:
+      - type: bind
+        source: ./test/fixtures/invalid-typescript-extension
+        target: /extensions/invalid-typescript
+        read_only: true
     depends_on:
       redis:
         condition: service_healthy

@@ -54,11 +54,11 @@ see "Example with docker-compose" section for example with env parameters
 services:
   bullboard:
     environment:
-      BULL_BOARD_EXTENSIONS: '["/extensions/example"]'
+      BULL_BOARD_EXTENSIONS: '["/extensions/example-ts"]'
     volumes:
       - type: bind
-        source: ./extensions/example
-        target: /extensions/example
+        source: ./extensions/example-ts
+        target: /extensions/example-ts
         read_only: true
 ```
 
@@ -78,13 +78,24 @@ Extensions can mount a URL-backed page tree while activating. A root relative to
 ```ts
 context.pages.mount({
   root: new URL('./public/', import.meta.url),
-  preload: ['index.html', 'app.js', 'styles.css'],
+  preload: ['index.html', 'app.ts', 'styles.css'],
 });
 ```
 
-`pages.mount()` accepts a trailing-slash `file:`, `http:`, or `https:` root. Its `preload` list is the startup manifest: every listed text asset is loaded before the server starts, so an unavailable asset fails startup instead of producing a partially loaded page. For example, an HTML page should link to `./styles.css` and `./app.js`, while its script should call an extension API with a relative URL such as `fetch('./api/queues')`.
+`pages.mount()` accepts a trailing-slash `file:`, `http:`, or `https:` root. Its `preload` list is the startup manifest: every listed text asset is loaded before the server starts, so an unavailable asset fails startup instead of producing a partially loaded page. Keep HTML and API references relative so they remain valid behind `PROXY_PATH`:
 
-Page serving supports these text extensions: `.css`, `.html`, `.js`, `.json`, `.map`, `.mjs`, `.svg`, and `.txt`. It does not render templates or serve binary assets. Extensions and their pages are loaded once at startup; changing configuration, code, or assets requires an application restart. There is no hot reload or hot unload.
+```html
+<link rel="stylesheet" href="./styles.css">
+<script type="module" src="./app.ts"></script>
+```
+
+Browser TypeScript entries are bundled at runtime by the Deno CLI with an isolated browser ESM configuration (`--no-config --no-lock --platform browser --format esm --allow-import`). Relative TypeScript imports are included in the same JavaScript output. The browser still requests the original `.ts` URL, but receives the cached bundle as `text/javascript; charset=utf-8`; no generated `.js` path or frontend build step is needed. Add `/// <reference lib="dom" />` to a browser entry when it should also pass `deno check` without a separate browser TypeScript configuration.
+
+Preloaded `.ts` compilation failures stop startup before HTTP listening. A `.ts` asset omitted from `preload` is compiled on its first request, cached in memory, and returns HTTP 500 if compilation fails. The base image pre-warms Deno's platform-specific esbuild package, while remote source modules can still require startup network access and writable Deno cache storage.
+
+Page serving supports these text extensions: `.css`, `.html`, `.js`, `.json`, `.map`, `.mjs`, `.svg`, `.ts`, and `.txt`. It does not render templates or serve binary assets. Extensions and their pages are loaded once at startup; changing configuration, code, or assets requires an application restart. There is no hot reload or hot unload.
+
+The repository includes `extensions/example-js` as the plain JavaScript compatibility example and `extensions/example-ts` as the recommended native TypeScript example. Both use an HTML page plus relative AJAX calls to extension API routes.
 
 The loader accepts `npm:`, `jsr:`, and `https:` specifiers. A raw GitHub URL should include a fixed commit, for example `https://raw.githubusercontent.com/OWNER/REPOSITORY/COMMIT/mod.ts`. Pin package versions and commits in production. Cold startup of a remote extension can require network access and writable Deno cache storage, so production images should pre-cache remote extensions in a derived image during the image build.
 

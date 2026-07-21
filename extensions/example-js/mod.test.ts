@@ -6,19 +6,19 @@ import extension from './mod.ts';
 
 async function request(router: express.Router, path: string): Promise<Response> {
   const app = express();
-  app.use('/ext/example', router);
+  app.use('/ext/example-js', router);
   const server = app.listen(0, '127.0.0.1');
   await new Promise<void>((resolve) => server.once('listening', resolve));
   const address = server.address();
   assert.ok(address && typeof address === 'object');
   try {
-    return await fetch(`http://127.0.0.1:${address.port}/ext/example${path}`);
+    return await fetch(`http://127.0.0.1:${address.port}/ext/example-js${path}`);
   } finally {
     await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
   }
 }
 
-Deno.test('example extension mounts its static page and serves fresh queue snapshots', async () => {
+Deno.test('JavaScript example mounts its static page and serves fresh queue snapshots', async () => {
   const router = express.Router();
   const links: ExtensionLink[] = [];
   let pageMount: Parameters<ExtensionContext['pages']['mount']>[0] | undefined;
@@ -36,11 +36,11 @@ Deno.test('example extension mounts its static page and serves fresh queue snaps
       },
     },
     proxyPath: '/app/bull-board',
-    url: (path) => `/app/bull-board/ext/example${path}`,
+    url: (path) => `/app/bull-board/ext/example-js${path}`,
     addLink: (link) => links.push(link),
   };
 
-  assert.equal(extension.id, 'example');
+  assert.equal(extension.id, 'example-js');
   assert.equal(extension.apiVersion, 1);
   await extension.activate(context, undefined);
 
@@ -48,7 +48,7 @@ Deno.test('example extension mounts its static page and serves fresh queue snaps
     root: new URL('./public/', import.meta.url),
     preload: ['index.html', 'app.js', 'styles.css'],
   });
-  assert.deepEqual(links, [{ text: 'Example', path: '/' }]);
+  assert.deepEqual(links, [{ text: 'JavaScript Example', path: '/' }]);
 
   const firstResponse = await request(router, '/api/queues');
   assert.equal(firstResponse.status, 200);
@@ -66,7 +66,7 @@ Deno.test('example extension mounts its static page and serves fresh queue snaps
   });
 });
 
-Deno.test('example static page has accessible AJAX queue UI assets', async () => {
+Deno.test('JavaScript example has accessible AJAX queue UI assets', async () => {
   const publicDirectory = new URL('./public/', import.meta.url);
   const [html, script, styles] = await Promise.all([
     Deno.readTextFile(new URL('index.html', publicDirectory)),

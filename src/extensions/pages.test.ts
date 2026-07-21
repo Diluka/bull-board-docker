@@ -3,7 +3,7 @@ import { request as httpRequest } from 'node:http';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-import express, { type Express } from 'express';
+import express, { type ErrorRequestHandler, type Express } from 'express';
 
 import { createExtensionPages } from './pages.ts';
 
@@ -36,6 +36,77 @@ Deno.test('serves preloaded pages, nested indexes, and supported asset media typ
   assert.equal((await request(app, '/nested/')).status, 200);
   assert.equal((await request(app, '/image.png')).status, 404);
   assert.deepEqual(loads, ['/public/index.html', '/public/app.js', '/public/styles.css', '/public/nested/index.html']);
+});
+
+Deno.test('preloads TypeScript through the browser bundler and serves cached JavaScript', async () => {
+  const app = express();
+  const router = express.Router();
+  app.use(router);
+  const textLoads: string[] = [];
+  const bundles: string[] = [];
+  const controller = createExtensionPages('example', router, () => true, {
+    loadText: (url) => {
+      textLoads.push(url.pathname);
+      return Promise.resolve('<!doctype html><script type="module" src="./app.ts"></script>');
+    },
+    bundleTypeScript: (url: URL) => {
+      bundles.push(url.pathname);
+      return Promise.resolve('const queueCount = 1;\nexport { queueCount };\n');
+    },
+  });
+
+  controller.pages.mount({
+    root: new URL('https://extensions.example/public/'),
+    preload: ['index.html', 'app.ts', 'app.ts'],
+  });
+  await controller.completeActivation();
+
+  assert.equal((await request(app, '/app.ts')).headers.get('content-type'), 'text/javascript; charset=utf-8');
+  assert.equal(await text(await request(app, '/app.ts')), 'const queueCount = 1;\nexport { queueCount };\n');
+  assert.deepEqual(textLoads, ['/public/index.html']);
+  assert.deepEqual(bundles, ['/public/app.ts']);
+});
+
+Deno.test('does not install the page fallback when a preloaded TypeScript bundle fails', async () => {
+  const app = express();
+  const router = express.Router();
+  app.use(router);
+  const controller = createExtensionPages('example', router, () => true, {
+    loadText: () => Promise.resolve(''),
+    bundleTypeScript: () => Promise.reject(new Error('TypeScript compilation failed')),
+  });
+  controller.pages.mount({ root: new URL('https://extensions.example/public/'), preload: ['app.ts'] });
+
+  await assert.rejects(() => controller.completeActivation(), /TypeScript compilation failed/);
+  assert.equal((await request(app, '/app.ts')).status, 404);
+});
+
+Deno.test('returns 500 for a lazy TypeScript failure and retries the rejected bundle', async () => {
+  const app = express();
+  const router = express.Router();
+  app.use(router);
+  let bundles = 0;
+  const controller = createExtensionPages('example', router, () => true, {
+    loadText: () => Promise.resolve(''),
+    bundleTypeScript: () => {
+      bundles++;
+      return bundles === 1
+        ? Promise.reject(new Error('temporary TypeScript failure'))
+        : Promise.resolve('const recovered = true;\nexport { recovered };\n');
+    },
+  });
+  controller.pages.mount({ root: new URL('https://extensions.example/public/') });
+  await controller.completeActivation();
+  const errorHandler: ErrorRequestHandler = (error, _request, response, _next) => {
+    response.status(500).type('text/plain').send(String(error));
+  };
+  app.use(errorHandler);
+
+  const failed = await request(app, '/app.ts');
+  assert.equal(failed.status, 500);
+  assert.match(await failed.text(), /temporary TypeScript failure/);
+  assert.equal(await text(await request(app, '/app.ts')), 'const recovered = true;\nexport { recovered };\n');
+  assert.equal(bundles, 2);
 });
 
 Deno.test('only permits one mount while the extension is activating', () => {
