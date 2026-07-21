@@ -8,8 +8,7 @@ The page layer does not interpolate data or execute templates. Browser code obta
 
 ## Scope
 
-- Add an extension-scoped page root and raw `res.render('relative/path.html')` support.
-- Add a static-like fallback for text web assets below that page root.
+- Add an extension-scoped, static-like page root for HTML and other text web assets.
 - Load remote text assets through Deno's module loader so URL extensions and Deno caching work consistently.
 - Move the example to `extensions/example/` and give it a standalone HTML page, CSS, JavaScript, and a queue JSON API.
 - Keep all extension pages and APIs behind the application's existing login protection.
@@ -56,28 +55,15 @@ This works for an absolute-path extension because `import.meta.url` is a `file:`
 
 Each extension receives a page controller bound only to its own Router:
 
-1. Before `activate()`, the loader inserts middleware that provides the extension-scoped `res.render()` implementation.
-2. The extension registers API and page routes during `activate()`.
-3. After `activate()`, the loader freezes page configuration, preloads declared assets, and appends the static fallback to the end of the extension Router.
-4. The extension Router is mounted at internal `/ext/{id}` as it is today.
+1. The extension registers API routes and calls `pages.mount()` during `activate()`.
+2. After `activate()`, the loader freezes page configuration, preloads declared assets, and appends the page fallback to the end of the extension Router.
+3. The extension Router is mounted at internal `/ext/{id}` as it is today.
 
 Appending the static fallback after activation guarantees that explicit routes such as `/api/queues` take precedence over files with the same request path.
 
-An explicit page route is ordinary Express code:
-
-```ts
-context.router.get('/', (_request, response) => {
-  response.render('index.html');
-});
-```
-
-The extension-scoped renderer resolves only a relative `.html` path below the mounted page root, loads the file as text, sets `text/html; charset=utf-8`, and returns it unchanged. It preserves the Express callback form of `res.render()`, but render locals are unsupported because this layer performs no interpolation. A non-empty locals object is an error.
-
-If an extension calls `res.render()` without mounting pages, supplies an absolute path, escapes the page root, uses a non-HTML extension, or names a missing page, the request is forwarded to Express error handling.
-
 ## Static-Like Assets
 
-After explicit extension routes run, GET and HEAD requests may resolve to a text asset below the mounted page root. `/` and any path ending in `/` map to `index.html` below that path. The fallback supports these extensions and response media types:
+After explicit extension routes run, GET and HEAD requests may resolve to a text asset below the mounted page root. `/` and any path ending in `/` map to `index.html` below that path, so mounting a page root is sufficient to publish its entry page. The fallback supports these extensions and response media types:
 
 | Extension | Media type |
 | --- | --- |
@@ -127,7 +113,7 @@ extensions/example/
     styles.css
 ```
 
-It mounts `public/`, preloads all three files, registers an explicit root route using `res.render('index.html')`, and exposes `GET /api/queues`. The API reads `context.queues.list()` for every request and returns only plain data:
+It mounts `public/`, preloads all three files, and exposes `GET /api/queues`. The page fallback serves `public/index.html` at the extension root. The API reads `context.queues.list()` for every request and returns only plain data:
 
 ```json
 {
@@ -144,7 +130,6 @@ The base image continues to exclude `extensions/example`. Test Compose bind-moun
 
 - Invalid page roots, repeated mounts, invalid preload paths, and calls after activation fail activation before listening.
 - A missing or unreachable preloaded asset fails activation before listening.
-- An explicit `res.render()` failure reaches Express error handling.
 - A missing lazy static asset falls through as 404.
 - One extension's page state, cache, or failure cannot select templates or assets from another extension.
 - Disposer and Queue/Redis cleanup behavior remains unchanged.
@@ -154,9 +139,9 @@ The base image continues to exclude `extensions/example`. Test Compose bind-moun
 Unit coverage will verify:
 
 - API typing and the activate-only, single-mount lifecycle.
-- `file:` and HTTP page roots, raw HTML rendering, callback rendering, media types, GET/HEAD behavior, directory index handling, and explicit-route precedence.
+- `file:` and HTTP page roots, byte-for-byte HTML delivery, media types, GET/HEAD behavior, directory index handling, and explicit-route precedence.
 - URL traversal rejection, unsupported asset types, missing assets, preload failure, concurrent load deduplication, retry after failure, and page-state isolation between extensions.
-- A URL-loaded extension can derive its page root from `import.meta.url`, preload sibling HTML/JS/CSS, and render the HTML without filesystem access.
+- A URL-loaded extension can derive its page root from `import.meta.url`, preload sibling HTML/JS/CSS, and serve the HTML without filesystem access.
 - The example registers its page root and navigation, returns a live queue JSON snapshot, and does not expose raw Queue objects.
 
 Docker acceptance will verify:
@@ -175,5 +160,6 @@ CI will check, lint, format, and test `src/`, `extensions/`, and `test/`. Ordina
 
 - `express.static()` alone was rejected because it requires a local filesystem directory and cannot model direct HTTPS extensions.
 - hbs was proven capable of compiling a URL-imported HTML string, but its standard Express adapter reads templates with `fs.readFile()`. Keeping it would add a dependency and a custom adapter without providing value when page data is intentionally fetched through AJAX.
+- Router-scoped `res.render()` was rejected because mounting a page root already provides the desired index and relative-path behavior; retaining a render facade would add template-engine semantics without dynamic rendering.
 - React and Vue SSR were rejected because their interactive workflows require client compilation or hydration and do not improve this raw-page use case.
 - Exposing the top-level Express app remains out of scope because the extension Router, page root, and JSON routes provide the required capability without weakening route isolation.
