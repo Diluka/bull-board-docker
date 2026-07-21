@@ -130,3 +130,108 @@ Deno.test('close waits for every queue, continues after failures, and is idempot
   assert.deepEqual(events, ['a', 'b']);
   assert.deepEqual(manager.list(), []);
 });
+
+Deno.test('refresh publishes a complete replacement while failed removed queues stay pending for retry', async () => {
+  let keys = ['bull:a:meta', 'bull:b:meta'];
+  const closeAttempts = new Map<string, number>();
+  const closeErrors: [string, unknown][] = [];
+  const options = {
+    client: { keys: () => Promise.resolve(keys) },
+    prefix: 'bull',
+    version: 'BULLMQ',
+    createQueue: (name: string): FakeQueue => ({
+      name,
+      close() {
+        const attempt = (closeAttempts.get(name) ?? 0) + 1;
+        closeAttempts.set(name, attempt);
+        return name === 'b' && attempt === 1 ? Promise.reject(new Error('b close failed')) : Promise.resolve();
+      },
+    }),
+    createAdapter: (queue: FakeQueue) => `adapter:${queue.name}`,
+    onQueueCloseError: (name: string, error: unknown) => closeErrors.push([name, error]),
+  };
+  const manager = new QueueManager<FakeQueue, string>(options);
+  await manager.refresh();
+
+  keys = ['bull:c:meta'];
+  const adapters = await manager.refresh();
+
+  assert.deepEqual(adapters, ['adapter:c']);
+  assert.deepEqual(manager.list().map((queue) => queue.name), ['c']);
+  assert.deepEqual(closeErrors.map(([name, error]) => [name, String(error)]), [['b', 'Error: b close failed']]);
+  assert.equal(closeAttempts.get('a'), 1);
+  assert.equal(closeAttempts.get('b'), 1);
+
+  await manager.refresh();
+  assert.equal(closeAttempts.get('b'), 2);
+});
+
+Deno.test('create failure preserves the published snapshot and closes every queue created for the failed refresh', async () => {
+  let keys = ['bull:a:meta'];
+  const closed: string[] = [];
+  const manager = new QueueManager<FakeQueue, string>({
+    client: { keys: () => Promise.resolve(keys) },
+    prefix: 'bull',
+    version: 'BULLMQ',
+    createQueue(name) {
+      if (name === 'c') throw new Error('create c failed');
+      return { name, close: () => Promise.resolve().then(() => closed.push(name)).then(() => {}) };
+    },
+    createAdapter: (queue) => `adapter:${queue.name}`,
+  });
+  await manager.refresh();
+  const publishedA = manager.get('a');
+
+  keys = ['bull:a:meta', 'bull:b:meta', 'bull:c:meta'];
+  await assert.rejects(() => manager.refresh(), /create c failed/);
+
+  assert.deepEqual(manager.list().map((queue) => queue.name), ['a']);
+  assert.equal(manager.get('a'), publishedA);
+  assert.equal(manager.get('b'), undefined);
+  assert.deepEqual(closed, ['b']);
+});
+
+Deno.test('adapter failure preserves the snapshot and aggregates cleanup failures for new queues', async () => {
+  let keys = ['bull:a:meta'];
+  let failAdapter = false;
+  let bCloseAttempts = 0;
+  const manager = new QueueManager<FakeQueue, string>({
+    client: { keys: () => Promise.resolve(keys) },
+    prefix: 'bull',
+    version: 'BULLMQ',
+    createQueue: (name) => ({
+      name,
+      close() {
+        if (name === 'b') {
+          bCloseAttempts++;
+          return Promise.reject(new Error('cleanup b failed'));
+        }
+        return Promise.resolve();
+      },
+    }),
+    createAdapter(queue) {
+      if (failAdapter && queue.name === 'b') throw new Error('adapter b failed');
+      return `adapter:${queue.name}`;
+    },
+  });
+  await manager.refresh();
+  const publishedA = manager.get('a');
+
+  keys = ['bull:a:meta', 'bull:b:meta'];
+  failAdapter = true;
+  await assert.rejects(
+    () => manager.refresh(),
+    (error) => {
+      assert.ok(error instanceof AggregateError);
+      assert.deepEqual(error.errors.map(String), ['Error: adapter b failed', 'Error: cleanup b failed']);
+      return true;
+    },
+  );
+
+  assert.deepEqual(manager.list().map((queue) => queue.name), ['a']);
+  assert.equal(manager.get('a'), publishedA);
+  assert.equal(manager.get('b'), undefined);
+  assert.equal(bCloseAttempts, 1);
+  await assert.rejects(() => manager.close(), AggregateError);
+  assert.equal(bCloseAttempts, 2);
+});

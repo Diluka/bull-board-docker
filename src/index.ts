@@ -5,13 +5,12 @@ import LegacyQueue, { Queue as BullQueue } from 'bull';
 import { Queue } from 'bullmq';
 import type { Express } from 'express';
 import { Cluster, Redis, RedisOptions } from 'ioredis';
-import type { Server } from 'node:http';
 import process from 'node:process';
 
 import { createApplication } from './app.ts';
 import config from './config.ts';
 import { QueueManager } from './queues.ts';
-import { createRefreshScheduler, createShutdown } from './runtime.ts';
+import { closeHttpServer, createRefreshScheduler, createShutdown } from './runtime.ts';
 
 const redisConfig = {
   port: config.REDIS_PORT,
@@ -49,10 +48,11 @@ const queueManager = new QueueManager<Queue | BullQueue, BullMQAdapter | BullAda
       prefix: config.BULL_PREFIX,
     }),
   createAdapter: (queue) => isBullMQ ? new BullMQAdapter(queue as Queue) : new BullAdapter(queue as BullQueue),
+  onQueueCloseError: (queueName, error) => console.error(`failed to close queue "${queueName}":`, error),
 });
 
 let extensionLifecycle: Awaited<ReturnType<typeof createApplication>>['extensionLifecycle'] | undefined;
-let server: Server | undefined;
+let server: ReturnType<Express['listen']> | undefined;
 
 try {
   const serverAdapter = new ExpressAdapter();
@@ -69,7 +69,7 @@ try {
 
   const shutdown = createShutdown({
     stopRefresh: () => refreshScheduler.stop(),
-    closeServer: () => closeServer(server!),
+    closeServer: () => closeHttpServer(server!),
     disposeExtensions: () => extensionLifecycle!.dispose(),
     closeQueues: () => queueManager.close(),
     disconnectRedis,
@@ -85,14 +85,14 @@ try {
   console.log(`bull-board is started http://localhost:${config.PORT}${config.HOME_PAGE}`);
   console.log('bull-board is fetching queue list, please wait...');
 } catch (error) {
-  if (server) await cleanup('server', () => closeServer(server!));
+  if (server) await cleanup('server', () => closeHttpServer(server!));
   if (extensionLifecycle) await cleanup('extensions', () => extensionLifecycle!.dispose());
   await cleanup('queues', () => queueManager.close());
   await cleanup('redis', disconnectRedis);
   throw error;
 }
 
-function listen(app: Express, port: number): Promise<Server> {
+function listen(app: Express, port: number): Promise<ReturnType<Express['listen']>> {
   return new Promise((resolve, reject) => {
     const listeningServer = app.listen(port);
     const onError = (error: Error) => {
@@ -105,12 +105,6 @@ function listen(app: Express, port: number): Promise<Server> {
     };
     listeningServer.once('error', onError);
     listeningServer.once('listening', onListening);
-  });
-}
-
-function closeServer(listeningServer: Server): Promise<void> {
-  return new Promise((resolve, reject) => {
-    listeningServer.close((error) => error ? reject(error) : resolve());
   });
 }
 

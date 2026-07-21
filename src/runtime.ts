@@ -1,3 +1,5 @@
+import type { Server } from 'node:http';
+
 export interface RefreshSchedulerOptions<AdapterType> {
   refresh(): Promise<readonly AdapterType[]>;
   replaceQueues(queues: readonly AdapterType[]): void;
@@ -5,6 +7,12 @@ export interface RefreshSchedulerOptions<AdapterType> {
   intervalMs?: number;
   setInterval?: (callback: () => void, intervalMs: number) => unknown;
   clearInterval?: (handle: unknown) => void;
+}
+
+export function closeHttpServer(server: Server): Promise<void> {
+  return new Promise((resolve, reject) => {
+    server.close((error) => error ? reject(error) : resolve());
+  });
 }
 
 export interface RefreshScheduler {
