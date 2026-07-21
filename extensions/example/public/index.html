@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Queue Observatory</title>
+    <link rel="stylesheet" href="./styles.css">
+    <script src="./app.js" defer></script>
+  </head>
+  <body>
+    <main class="observatory">
+      <header class="masthead reveal reveal--one">
+        <p class="eyebrow">Extension 01 / Live inventory</p>
+        <h1>Queue Observatory</h1>
+        <p class="lede">A direct line into the queues currently connected to this board.</p>
+      </header>
+      <section class="queue-panel reveal reveal--two" aria-labelledby="queue-heading">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">Current register</p>
+            <h2 id="queue-heading">Queues</h2>
+          </div>
+          <button id="refresh-button" type="button">Refresh register</button>
+        </div>
+        <p id="queue-status" class="status" role="status" aria-live="polite">Preparing queue register.</p>
+        <ul id="queue-list" class="queue-list" aria-describedby="queue-status"></ul>
+      </section>
+    </main>
+  </body>
+</html>

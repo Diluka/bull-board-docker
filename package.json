@@ -9,7 +9,7 @@
     "start": "deno run -A src/index.ts",
     "dev": "deno run -A --watch --env-file src/index.ts",
     "test": "deno task test:unit && deno task test:docker",
-    "test:unit": "deno test -A --frozen --node-modules-dir=none src/ example/ test/acceptance.test.ts",
+    "test:unit": "deno test -A --frozen --node-modules-dir=none src/ extensions/ test/acceptance.test.ts",
     "test:docker": "deno run -A --frozen --node-modules-dir=none test/docker.ts"
   },
   "repository": "https://github.com/Diluka/bull-board-docker",
