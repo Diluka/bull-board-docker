@@ -4,7 +4,7 @@ import { isAbsolute, posix, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import process from 'node:process';
 
-import type { BullBoardExtension, ExtensionContext, ExtensionDisposer, ExtensionQueues, JsonValue } from './api.ts';
+import type { BullBoardExtension, ExtensionContext, ExtensionDisposer, ExtensionQueues } from './api.ts';
 import { createExtensionPages } from './pages.ts';
 
 const extensionIdPattern = /^[a-z0-9](?:[a-z0-9._-]{0,63})$/;
@@ -13,7 +13,7 @@ const schemePattern = /^[a-zA-Z][a-zA-Z0-9+.-]*:/;
 
 export interface ExtensionSpec {
   specifier: string;
-  options: JsonValue | undefined;
+  options: unknown;
 }
 
 export interface ExtensionPreparationDependencies {
@@ -27,11 +27,6 @@ export interface ExtensionActivationDependencies {
   redis: ExtensionContext['redis'];
   queues: ExtensionQueues;
   proxyPath: string;
-}
-
-export interface ExtensionLoaderDependencies extends ExtensionPreparationDependencies, ExtensionActivationDependencies {
-  mountRouter: (mountPath: string, router: Router) => void;
-  addMiscLink: (link: IMiscLink) => void;
 }
 
 export interface ExtensionLifecycle {
@@ -50,7 +45,7 @@ export interface PreparedExtensions {
 interface PreparedExtension {
   readonly index: number;
   readonly specifier: string;
-  readonly options: JsonValue | undefined;
+  readonly options: unknown;
   readonly id: string;
   readonly activate: BullBoardExtension['activate'];
 }
@@ -89,7 +84,7 @@ export function parseExtensionConfig(value: string | undefined): ExtensionSpec[]
       throw configEntryError(index, typeof specifier === 'string' ? specifier : undefined);
     }
     const options = 'options' in entry ? entry.options : undefined;
-    return { specifier, options: options as JsonValue | undefined };
+    return { specifier, options };
   });
 }
 
@@ -131,26 +126,6 @@ export async function resolveExtensionSpecifier(specifier: string, cwd = process
 function localSpecifierError(specifier: string, error: unknown): Error {
   const detail = error instanceof Error ? `: ${error.message}` : '';
   return new Error(`Unable to resolve extension specifier "${specifier}"${detail}`);
-}
-
-export async function loadExtensions(
-  dependencies: ExtensionLoaderDependencies,
-  configuration = process.env.BULL_BOARD_EXTENSIONS,
-): Promise<ExtensionLifecycle> {
-  const prepared = await prepareExtensions(dependencies, configuration);
-  const activated = await prepared.activate(dependencies);
-  try {
-    activated.mountRouters(dependencies.mountRouter);
-    for (const link of activated.miscLinks) dependencies.addMiscLink(link);
-  } catch (error) {
-    try {
-      await activated.dispose();
-    } catch (disposeError) {
-      throw new AggregateError([error, disposeError], `Failed to mount extensions: ${errorMessage(error)}`);
-    }
-    throw error;
-  }
-  return activated;
 }
 
 export async function prepareExtensions(

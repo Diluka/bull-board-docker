@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import type { ExtensionContext } from './api.ts';
-import { loadExtensions, parseExtensionConfig, resolveExtensionSpecifier } from './loader.ts';
+import { parseExtensionConfig, prepareExtensions, resolveExtensionSpecifier } from './loader.ts';
 
 Deno.test('treats missing, blank, and empty extension configuration as empty', () => {
   assert.deepEqual(parseExtensionConfig(undefined), []);
@@ -119,7 +119,7 @@ Deno.test('reports missing local extension files with their specifier', async ()
 Deno.test('annotates local extension resolution failures with their configuration entry', async () => {
   const cwd = await Deno.makeTempDir();
   await assert.rejects(
-    () => loadExtensions(dependencies({ cwd }), '["./missing-extension"]'),
+    () => prepareExtensions(dependencies({ cwd }), '["./missing-extension"]'),
     /index 0 \(\.\/missing-extension\).*Unable to resolve extension specifier/,
   );
 });
@@ -130,11 +130,14 @@ function dependencies(overrides: Record<string, unknown> = {}) {
     queues: { list: () => [], get: () => undefined },
     proxyPath: '/proxy',
     createRouter: () => ({}) as never,
-    mountRouter: () => {},
-    addMiscLink: () => {},
     importModule: () => Promise.resolve({ default: { id: 'valid', apiVersion: 1, activate: () => {} } }),
     ...overrides,
   };
+}
+
+async function activateExtensions(extensionDependencies: ReturnType<typeof dependencies>, configuration: string) {
+  const prepared = await prepareExtensions(extensionDependencies, configuration);
+  return await prepared.activate(extensionDependencies);
 }
 
 Deno.test('loads defaults only, validates their contract, and rejects duplicate IDs', async () => {
@@ -147,11 +150,11 @@ Deno.test('loads defaults only, validates their contract, and rejects duplicate 
       { default: { id: 'valid', apiVersion: 1, activate: true } },
     ]
   ) {
-    await assert.rejects(() => loadExtensions(dependencies({ importModule: () => Promise.resolve(module) }), '["npm:one"]'));
+    await assert.rejects(() => prepareExtensions(dependencies({ importModule: () => Promise.resolve(module) }), '["npm:one"]'));
   }
 
   await assert.rejects(
-    () => loadExtensions(dependencies(), '["npm:one", "npm:two"]'),
+    () => prepareExtensions(dependencies(), '["npm:one", "npm:two"]'),
     /Duplicate extension id "valid"/,
   );
 });
@@ -160,7 +163,7 @@ Deno.test('imports and validates every extension before activating any extension
   const activations: string[] = [];
   await assert.rejects(
     () =>
-      loadExtensions(
+      prepareExtensions(
         dependencies({
           importModule: (specifier: string) => {
             if (specifier === 'npm:first') {
@@ -212,14 +215,12 @@ Deno.test('snapshots validated identity and activation callable before activatio
     ['npm:second', { default: second }],
   ]);
 
-  await loadExtensions(
-    dependencies({
-      importModule: (specifier: string) => Promise.resolve(modules.get(specifier)),
-      mountRouter: (path: string) => mounts.push(path),
-      addMiscLink: (link: unknown) => links.push(link),
-    }),
+  const activated = await activateExtensions(
+    dependencies({ importModule: (specifier: string) => Promise.resolve(modules.get(specifier)) }),
     '["npm:first", "npm:second"]',
   );
+  activated.mountRouters((path) => mounts.push(path));
+  links.push(...activated.miscLinks);
 
   assert.deepEqual(events, ['first', 'original-second']);
   assert.deepEqual(mounts, ['/ext/mutator', '/ext/real']);
@@ -254,14 +255,12 @@ Deno.test('reads accessor-backed contract properties once and uses only their ca
     },
   };
 
-  await loadExtensions(
-    dependencies({
-      importModule: () => Promise.resolve({ default: extension }),
-      mountRouter: (path: string) => mounts.push(path),
-      addMiscLink: (link: unknown) => links.push(link),
-    }),
+  const activated = await activateExtensions(
+    dependencies({ importModule: () => Promise.resolve({ default: extension }) }),
     '["npm:accessors"]',
   );
+  activated.mountRouters((path) => mounts.push(path));
+  links.push(...activated.miscLinks);
 
   assert.equal(idReads, 1);
   assert.equal(apiVersionReads, 1);
@@ -310,11 +309,9 @@ Deno.test('activates extensions serially with isolated routers and context-bound
       },
     }],
   ]);
-  const loading = loadExtensions(
+  const loading = activateExtensions(
     dependencies({
       createRouter: () => ({}) as never,
-      mountRouter: (path: string) => mounts.push(path),
-      addMiscLink: (link: unknown) => links.push(link),
       importModule: (specifier: string) => Promise.resolve(modules.get(specifier)),
     }),
     '[{"specifier":"npm:first", "options":{"mode":"on"}}, "npm:second"]',
@@ -323,7 +320,9 @@ Deno.test('activates extensions serially with isolated routers and context-bound
   await firstStarted;
   assert.deepEqual(events, ['first-start:{"mode":"on"}']);
   releaseFirst();
-  await loading;
+  const activated = await loading;
+  activated.mountRouters((path) => mounts.push(path));
+  links.push(...activated.miscLinks);
 
   assert.deepEqual(events, ['first-start:{"mode":"on"}', 'first-finish', 'second']);
   assert.notEqual(routers[0], routers[1]);
@@ -363,7 +362,7 @@ Deno.test('completes each extension page mount before activating the next extens
     }],
   ]);
 
-  await loadExtensions(
+  await activateExtensions(
     dependencies({
       createPages: pages,
       importModule: (specifier: string) => Promise.resolve(modules.get(specifier)),
@@ -381,7 +380,7 @@ Deno.test('completes each extension page mount before activating the next extens
 
 Deno.test('rejects late and duplicate page mounts with extension activation diagnostics', async () => {
   let context: ExtensionContext | undefined;
-  await loadExtensions(
+  await activateExtensions(
     dependencies({
       createPages: recordingPages([]),
       importModule: () =>
@@ -415,7 +414,7 @@ Deno.test('rolls back a disposer when its page preload fails', async () => {
   const events: string[] = [];
   await assert.rejects(
     () =>
-      loadExtensions(
+      activateExtensions(
         dependencies({
           createPages: failingPages,
           importModule: () =>
@@ -480,7 +479,7 @@ function failingPages(_id: string, _router: unknown, isActivating: () => boolean
 }
 
 Deno.test('keeps extension URLs rooted while preserving query, fragment, and encoded filenames', async () => {
-  await loadExtensions(
+  await activateExtensions(
     dependencies({
       importModule: () =>
         Promise.resolve({
@@ -500,7 +499,7 @@ Deno.test('keeps extension URLs rooted while preserving query, fragment, and enc
 });
 
 Deno.test('rejects extension URLs that WHATWG normalizes outside the extension mount', async () => {
-  await loadExtensions(
+  await activateExtensions(
     dependencies({
       importModule: () =>
         Promise.resolve({
@@ -546,7 +545,7 @@ Deno.test('rejects unsafe links during activation and rolls back earlier extensi
 
   await assert.rejects(
     () =>
-      loadExtensions(
+      activateExtensions(
         dependencies({ importModule: (specifier: string) => Promise.resolve(modules.get(specifier)) }),
         '["npm:first", "npm:unsafe"]',
       ),
@@ -557,7 +556,7 @@ Deno.test('rejects unsafe links during activation and rolls back earlier extensi
 
 Deno.test('rejects links added after activation has completed', async () => {
   let context: ExtensionContext | undefined;
-  await loadExtensions(
+  await activateExtensions(
     dependencies({
       importModule: () =>
         Promise.resolve({
@@ -575,30 +574,6 @@ Deno.test('rejects links added after activation has completed', async () => {
   const activatedContext = context;
   assert.ok(activatedContext);
   assert.throws(() => activatedContext.addLink({ text: 'Late', path: '/late' }), /only add links while activating/);
-});
-
-Deno.test('rolls back mounted extensions when mounting a later router fails', async () => {
-  const events: string[] = [];
-  let mounts = 0;
-  const modules = new Map([
-    ['npm:a', { default: { id: 'a', apiVersion: 1, activate: () => () => events.push('dispose-a') } }],
-    ['npm:b', { default: { id: 'b', apiVersion: 1, activate: () => () => events.push('dispose-b') } }],
-  ]);
-  await assert.rejects(
-    () =>
-      loadExtensions(
-        dependencies({
-          importModule: (specifier: string) => Promise.resolve(modules.get(specifier)),
-          mountRouter: () => {
-            mounts++;
-            if (mounts === 2) throw new Error('mount failed');
-          },
-        }),
-        '["npm:a", "npm:b"]',
-      ),
-    /mount failed/,
-  );
-  assert.deepEqual(events, ['dispose-b', 'dispose-a']);
 });
 
 Deno.test('rolls back activated extensions in reverse order and dispose remains idempotent', async () => {
@@ -619,7 +594,7 @@ Deno.test('rolls back activated extensions in reverse order and dispose remains 
   ]);
   await assert.rejects(
     () =>
-      loadExtensions(
+      activateExtensions(
         dependencies({ importModule: (specifier: string) => Promise.resolve(modules.get(specifier)) }),
         '["npm:a", "npm:b", "npm:c", "npm:d"]',
       ),
@@ -627,7 +602,7 @@ Deno.test('rolls back activated extensions in reverse order and dispose remains 
   );
   assert.deepEqual(events, ['dispose-b', 'dispose-a']);
 
-  const lifecycle = await loadExtensions(
+  const lifecycle = await activateExtensions(
     dependencies({
       importModule: () => Promise.resolve({ default: { id: 'done', apiVersion: 1, activate: () => () => events.push('dispose-done') } }),
     }),
@@ -647,7 +622,7 @@ Deno.test('rejects invalid activate returns with extension identity and rolls ba
 
   await assert.rejects(
     () =>
-      loadExtensions(
+      activateExtensions(
         dependencies({ importModule: (specifier: string) => Promise.resolve(modules.get(specifier)) }),
         '["npm:a", "npm:b"]',
       ),
@@ -659,7 +634,7 @@ Deno.test('rejects invalid activate returns with extension identity and rolls ba
 Deno.test('annotates module import failures with their configuration entry', async () => {
   await assert.rejects(
     () =>
-      loadExtensions(
+      prepareExtensions(
         dependencies({ importModule: () => Promise.reject(new Error('module unavailable')) }),
         '[{"specifier":"npm:missing", "options":{"secret":"do-not-print"}}]',
       ),
@@ -675,7 +650,7 @@ Deno.test('annotates module import failures with their configuration entry', asy
 Deno.test('annotates activation failures with their configuration entry', async () => {
   await assert.rejects(
     () =>
-      loadExtensions(
+      activateExtensions(
         dependencies({
           importModule: () =>
             Promise.resolve({
@@ -702,7 +677,7 @@ Deno.test('annotates activation failures with their configuration entry', async 
 Deno.test('continues disposal after failures and reports all disposer errors', async () => {
   const events: string[] = [];
   let number = 0;
-  const lifecycle = await loadExtensions(
+  const lifecycle = await activateExtensions(
     dependencies({
       importModule: () => {
         number++;
@@ -731,7 +706,7 @@ Deno.test('shares one in-flight disposal promise and its failure with concurrent
   const blocked = new Promise<void>((resolve) => {
     release = resolve;
   });
-  const lifecycle = await loadExtensions(
+  const lifecycle = await activateExtensions(
     dependencies({
       importModule: () =>
         Promise.resolve({

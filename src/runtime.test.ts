@@ -1,34 +1,21 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 
-import { loadExtensions } from './extensions/loader.ts';
 import { assembleThenListen, closeHttpServer, createRefreshScheduler, createShutdown } from './runtime.ts';
 
-Deno.test('startup does not call HTTP listen when extension resolution fails during assembly', async () => {
-  const cwd = await Deno.makeTempDir();
+Deno.test('startup does not call HTTP listen when assembly fails', async () => {
   let listenCalls = 0;
 
   await assert.rejects(
     () =>
       assembleThenListen({
-        assemble: () =>
-          loadExtensions(
-            {
-              redis: {} as never,
-              queues: { list: () => [], get: () => undefined },
-              proxyPath: '',
-              cwd,
-              mountRouter: () => {},
-              addMiscLink: () => {},
-            },
-            '["./missing-extension"]',
-          ),
+        assemble: () => Promise.reject(new Error('assembly failed')),
         listen: () => {
           listenCalls++;
           return Promise.resolve('server');
         },
       }),
-    /index 0 \(\.\/missing-extension\) failed to resolve/,
+    /assembly failed/,
   );
   assert.equal(listenCalls, 0);
 });

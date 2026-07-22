@@ -1,5 +1,4 @@
 import type { BullBoardExtension, ExtensionContext, ExtensionLink, ExtensionPages, ExtensionQueues, RawQueue } from './api.ts';
-import type { ExtensionLoaderDependencies } from './loader.ts';
 
 const rawQueues: readonly RawQueue[] = [];
 const queues: ExtensionQueues = {
@@ -25,14 +24,6 @@ function assertCompileTimeContracts() {
   extension.id = 'changed';
   // @ts-expect-error The fixed API version is readonly.
   extension.apiVersion = 1;
-
-  // @ts-expect-error Hosts must explicitly mount routers and collect misc links.
-  const dependencies: ExtensionLoaderDependencies = {
-    redis: null as never,
-    queues,
-    proxyPath: '/',
-  };
-  void dependencies;
 }
 
 Deno.test('exposes readonly queues and rooted extension paths', () => {
