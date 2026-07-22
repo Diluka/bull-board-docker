@@ -1,55 +1,6 @@
 import assert from 'node:assert/strict';
 
-import { bundleBrowserTypeScript, type BundleProcessOutput } from './browser-typescript.ts';
-
-const encoder = new TextEncoder();
-
-Deno.test('bundles a TypeScript URL with an isolated browser ESM command', async () => {
-  const entry = new URL('https://extensions.example/public/app.ts');
-  let executable = '';
-  let args: readonly string[] = [];
-
-  const bundled = await bundleBrowserTypeScript(entry, {
-    execute: (receivedExecutable, receivedArgs) => {
-      executable = receivedExecutable;
-      args = receivedArgs;
-      return Promise.resolve(output({ stdout: 'const ready = true;\nexport { ready };\n' }));
-    },
-    execPath: () => '/runtime/deno',
-  });
-
-  assert.equal(executable, '/runtime/deno');
-  assert.deepEqual(args, [
-    'bundle',
-    '--no-config',
-    '--no-lock',
-    '--platform',
-    'browser',
-    '--format',
-    'esm',
-    '--allow-import',
-    entry.href,
-  ]);
-  assert.equal(bundled, 'const ready = true;\nexport { ready };\n');
-});
-
-Deno.test('reports the TypeScript URL, exit code, and stderr when bundling fails', async () => {
-  const entry = new URL('https://extensions.example/public/broken.ts');
-
-  await assert.rejects(
-    () =>
-      bundleBrowserTypeScript(entry, {
-        execute: () => Promise.resolve(output({ success: false, code: 1, stderr: 'Unexpected token' })),
-        execPath: () => '/runtime/deno',
-      }),
-    (error: unknown) => {
-      assert.match(String(error), /broken\.ts/);
-      assert.match(String(error), /exit code 1/);
-      assert.match(String(error), /Unexpected token/);
-      return true;
-    },
-  );
-});
+import { bundleBrowserTypeScript } from './browser-typescript.ts';
 
 Deno.test('bundles a real HTTP TypeScript entry with relative imports into executable browser ESM', async () => {
   const source = Deno.serve({ hostname: '127.0.0.1', port: 0, onListen: () => {} }, (request) => {
@@ -78,13 +29,20 @@ Deno.test('bundles a real HTTP TypeScript entry with relative imports into execu
   }
 });
 
-function output(
-  overrides: { success?: boolean; code?: number; stdout?: string; stderr?: string } = {},
-): BundleProcessOutput {
-  return {
-    success: overrides.success ?? true,
-    code: overrides.code ?? 0,
-    stdout: encoder.encode(overrides.stdout ?? ''),
-    stderr: encoder.encode(overrides.stderr ?? ''),
-  };
-}
+Deno.test('reports real TypeScript bundling failures with source diagnostics', async () => {
+  const source = Deno.serve({ hostname: '127.0.0.1', port: 0, onListen: () => {} }, () => {
+    return new Response('export const broken = ;', { headers: { 'content-type': 'application/typescript' } });
+  });
+  const entry = new URL(`http://127.0.0.1:${source.addr.port}/broken.ts`);
+  try {
+    await assert.rejects(() => bundleBrowserTypeScript(entry), (error: unknown) => {
+      const message = String(error);
+      assert.match(message, /broken\.ts/);
+      assert.match(message, /exit code [1-9][0-9]*/);
+      assert.doesNotMatch(message, /no error output$/);
+      return true;
+    });
+  } finally {
+    await source.shutdown();
+  }
+});

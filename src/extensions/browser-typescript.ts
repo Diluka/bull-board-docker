@@ -1,21 +1,6 @@
-export interface BundleProcessOutput {
-  readonly success: boolean;
-  readonly code: number;
-  readonly stdout: Uint8Array;
-  readonly stderr: Uint8Array;
-}
-
-export interface BrowserTypeScriptBundlerDependencies {
-  execPath?(): string;
-  execute?(executable: string, args: readonly string[]): Promise<BundleProcessOutput>;
-}
-
 const decoder = new TextDecoder();
 
-export async function bundleBrowserTypeScript(
-  entry: URL,
-  dependencies: BrowserTypeScriptBundlerDependencies = {},
-): Promise<string> {
+export async function bundleBrowserTypeScript(entry: URL): Promise<string> {
   const args = [
     'bundle',
     '--no-config',
@@ -27,7 +12,7 @@ export async function bundleBrowserTypeScript(
     '--allow-import',
     entry.href,
   ] as const;
-  const output = await (dependencies.execute ?? execute)(dependencies.execPath?.() ?? Deno.execPath(), args);
+  const output = await execute(Deno.execPath(), args);
   if (!output.success) {
     const detail = decoder.decode(output.stderr).trim() || 'no error output';
     throw new Error(`Unable to bundle TypeScript page "${entry.href}" (exit code ${output.code}): ${detail}`);
@@ -35,7 +20,7 @@ export async function bundleBrowserTypeScript(
   return decoder.decode(output.stdout);
 }
 
-async function execute(executable: string, args: readonly string[]): Promise<BundleProcessOutput> {
+async function execute(executable: string, args: readonly string[]) {
   return await new Deno.Command(executable, {
     args: [...args],
     stdout: 'piped',
