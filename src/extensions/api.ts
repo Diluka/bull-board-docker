@@ -3,8 +3,6 @@ import type { Queue } from 'bullmq';
 import type { Router } from 'express';
 import type { Cluster, Redis } from 'ioredis';
 
-export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
-
 export type RawQueue = BullQueue | Queue;
 
 export interface ExtensionQueues {

@@ -1,6 +1,6 @@
 import type { NextFunction, Request, Response, Router } from 'express';
 
-import type { ExtensionPageMountOptions, ExtensionPages } from './api.ts';
+import type { ExtensionPages } from './api.ts';
 import { bundleBrowserTypeScript } from './browser-typescript.ts';
 
 const mediaTypes = Object.freeze({

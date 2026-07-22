@@ -322,8 +322,19 @@ Deno.test('metrics and login use internal paths before authentication while exte
   assert.equal((await request(result.app, '/proxy/metrics')).status, 401);
 });
 
-Deno.test('application disposes activated extensions when later assembly fails', async () => {
+Deno.test('application disposes activated extensions in reverse order when router mounting fails', async () => {
   const events: string[] = [];
+  const modules = new Map([
+    ['npm:a', { default: { id: 'a', apiVersion: 1, activate: () => () => events.push('dispose-a') } }],
+    ['npm:b', { default: { id: 'b', apiVersion: 1, activate: () => () => events.push('dispose-b') } }],
+  ]);
+  const protectedRouter = express.Router();
+  const useProtectedRouter = protectedRouter.use.bind(protectedRouter) as (...args: unknown[]) => Router;
+  protectedRouter.use = ((...args: unknown[]) => {
+    if (args[0] === '/ext/b') throw new Error('mount failed');
+    return useProtectedRouter(...args);
+  }) as typeof protectedRouter.use;
+
   await assert.rejects(
     () =>
       createApplication(
@@ -336,23 +347,13 @@ Deno.test('application disposes activated extensions when later assembly fails',
         runtimeOverrides({
           prepareExtensions: () =>
             prepareExtensions({
-              importModule: () =>
-                Promise.resolve({
-                  default: {
-                    id: 'demo',
-                    apiVersion: 1,
-                    activate: () => () => {
-                      events.push('dispose');
-                    },
-                  },
-                }),
-            }, '["npm:demo"]'),
-          createBullBoard: () => {
-            throw new Error('board failed');
-          },
+              importModule: (specifier) => Promise.resolve(modules.get(specifier)),
+            }, '["npm:a", "npm:b"]'),
+          createProtectedRouter: () => protectedRouter,
+          createBullBoard: () => ({ replaceQueues: () => {} }),
         }),
       ),
-    /board failed/,
+    /mount failed/,
   );
-  assert.deepEqual(events, ['dispose']);
+  assert.deepEqual(events, ['dispose-b', 'dispose-a']);
 });
