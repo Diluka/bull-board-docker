@@ -36,10 +36,12 @@ Deno.test('reports real TypeScript bundling failures with source diagnostics', a
   const entry = new URL(`http://127.0.0.1:${source.addr.port}/broken.ts`);
   try {
     await assert.rejects(() => bundleBrowserTypeScript(entry), (error: unknown) => {
-      const message = String(error);
-      assert.match(message, /broken\.ts/);
-      assert.match(message, /exit code [1-9][0-9]*/);
-      assert.doesNotMatch(message, /no error output$/);
+      assert.ok(error instanceof Error);
+      const prefix = `Unable to bundle TypeScript page "${entry.href}" (exit code `;
+      assert.ok(error.message.startsWith(prefix));
+      const suffix = error.message.slice(prefix.length);
+      assert.match(suffix, /^[1-9][0-9]*\): \S/);
+      assert.doesNotMatch(suffix, /no error output$/);
       return true;
     });
   } finally {
