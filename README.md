@@ -1,6 +1,6 @@
 Docker image for [bull-board]. Allow you to monitor your bull queue without any coding!
 
-Supports both: bull and bullmq. bull-board version v3.2.6
+Supports both: bull and bullmq.
 
 ### Quick start with Docker
 
@@ -15,8 +15,6 @@ To configurate redis see "Environment variables" section.
 ### Quick start with docker-compose
 
 ```yaml
-version: '3.5'
-
 services:
   bullboard:
     container_name: bullboard
@@ -32,14 +30,16 @@ see "Example with docker-compose" section for example with env parameters
 
 ### Environment variables
 
+- `PORT` - port for the HTTP server (3000 by default)
 - `REDIS_HOST` - host to connect to redis (localhost by default)
 - `REDIS_PORT` - redis port (6379 by default)
 - `REDIS_DB` - redis db to use ('0' by default)
 - `REDIS_USE_TLS` - enable TLS true or false (false by default)
+- `REDIS_IS_CLUSTER` - enable Redis Cluster true or false (false by default)
 - `REDIS_PASSWORD` - password to connect to redis (no password by default)
 - `BULL_PREFIX` - prefix to your bull queue name (bull by default)
 - `BULL_VERSION` - version of bull lib to use 'BULLMQ' or 'BULL' ('BULLMQ' by default)
-- `PROXY_PATH` - proxyPath for bull board, e.g. https://<server_name>/my-base-path/queues [docs] ('' by default)
+- `PROXY_PATH` - proxyPath for bull board, e.g. `/app/bull-board` [docs] ('' by default)
 - `USER_LOGIN` - login to restrict access to bull-board interface (disabled by default)
 - `USER_PASSWORD` - password to restrict access to bull-board interface (disabled by default)
 - `METRICS_ENABLED` - enable Prometheus metrics endpoint (disabled by default)
@@ -76,10 +76,21 @@ Extensions are trusted in-process code. They receive the raw Redis client and ra
 Extensions can mount a URL-backed page tree while activating. A root relative to `import.meta.url` works for both local modules and extensions distributed over HTTPS. Keep browser references relative so they continue to work behind `PROXY_PATH` and the extension route:
 
 ```ts
-context.pages.mount({
-  root: new URL('./public/', import.meta.url),
-  preload: ['index.html', 'app.ts', 'styles.css'],
-});
+import type { BullBoardExtension } from 'bull-board-docker/extensions';
+
+const extension: BullBoardExtension = {
+  id: 'example',
+  apiVersion: 1,
+  activate(context) {
+    context.pages.mount({
+      root: new URL('./public/', import.meta.url),
+      preload: ['index.html'],
+    });
+    context.addLink({ text: 'Example', path: '/' });
+  },
+};
+
+export default extension;
 ```
 
 `pages.mount()` accepts a trailing-slash `file:`, `http:`, or `https:` root. Its `preload` list is the startup manifest: every listed text asset is loaded before the server starts, so an unavailable asset fails startup instead of producing a partially loaded page. Keep HTML and API references relative so they remain valid behind `PROXY_PATH`:
@@ -97,7 +108,7 @@ Page serving supports these text extensions: `.css`, `.html`, `.js`, `.json`, `.
 
 The repository includes `extensions/example-js` as the plain JavaScript compatibility example and `extensions/example-ts` as the recommended native TypeScript example. Both use an HTML page plus relative AJAX calls to extension API routes.
 
-The loader accepts `npm:`, `jsr:`, and `https:` specifiers. A raw GitHub URL should include a fixed commit, for example `https://raw.githubusercontent.com/OWNER/REPOSITORY/COMMIT/mod.ts`. Pin package versions and commits in production. Cold startup of a remote extension can require network access and writable Deno cache storage, so production images should pre-cache remote extensions in a derived image during the image build.
+The host accepts `npm:`, `jsr:`, and `https:` specifiers. A raw GitHub URL should include a fixed commit, for example `https://raw.githubusercontent.com/OWNER/REPOSITORY/COMMIT/mod.ts`. Pin package versions and commits in production. Cold startup of a remote extension can require network access and writable Deno cache storage, so production images should pre-cache remote extensions in a derived image during the image build.
 
 ### Restrict access with login and password
 
@@ -146,12 +157,10 @@ scrape_configs:
 ### Example with docker-compose
 
 ```yaml
-version: '3.5'
-
 services:
   redis:
     container_name: redis
-    image: redis:5.0-alpine
+    image: redis:alpine
     restart: always
     ports:
       - 6379:6379
@@ -167,7 +176,6 @@ services:
     environment:
       REDIS_HOST: redis
       REDIS_PORT: 6379
-      REDIS_PASSWORD: example-password
       REDIS_USE_TLS: 'false'
       BULL_PREFIX: bull
       METRICS_ENABLED: 'true'
@@ -181,5 +189,5 @@ volumes:
     external: false
 ```
 
-[bull-board]: https://github.com/vcapretz/bull-board
-[bull-board]: https://github.com/felixmosh/bull-board#hosting-router-on-a-sub-path
+[bull-board]: https://github.com/felixmosh/bull-board
+[docs]: https://github.com/felixmosh/bull-board#hosting-router-on-a-sub-path
