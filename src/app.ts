@@ -15,6 +15,7 @@ import { authRouter as defaultAuthRouter } from './login.ts';
 
 export interface ApplicationConfig {
   AUTH_ENABLED: boolean;
+  BULL_DELIMITER: string;
   LOGIN_PAGE: string;
   METRICS_ENABLED: boolean;
   METRICS_VARS: Record<string, string>;
@@ -41,7 +42,12 @@ export interface ApplicationOptions {
 interface BoardOptions {
   queues: readonly unknown[];
   serverAdapter: ApplicationServerAdapter;
-  options: { uiConfig: { miscLinks: readonly IMiscLink[] } };
+  options: {
+    uiConfig: {
+      miscLinks: readonly IMiscLink[];
+      overview: { groupByDelimiter: boolean };
+    };
+  };
 }
 
 interface ApplicationRuntime {
@@ -92,7 +98,14 @@ export async function createApplication(
     const { replaceQueues } = runtime.createBullBoard({
       queues: initialAdapters,
       serverAdapter: options.serverAdapter,
-      options: { uiConfig: { miscLinks: extensionLifecycle.miscLinks } },
+      options: {
+        uiConfig: {
+          miscLinks: extensionLifecycle.miscLinks,
+          overview: {
+            groupByDelimiter: Boolean(options.config.BULL_DELIMITER),
+          },
+        },
+      },
     });
     const protectedRouter = runtime.createProtectedRouter();
     extensionLifecycle.mountRouters((path, router) => protectedRouter.use(path, router));

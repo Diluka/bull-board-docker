@@ -1,5 +1,3 @@
-import { BullAdapter } from '@bull-board/api/bullAdapter';
-import { BullMQAdapter } from '@bull-board/api/bullMQAdapter';
 import { ExpressAdapter } from '@bull-board/express';
 import LegacyQueue, { Queue as BullQueue } from 'bull';
 import { Queue } from 'bullmq';
@@ -9,6 +7,7 @@ import process from 'node:process';
 
 import { createApplication } from './app.ts';
 import config from './config.ts';
+import { createQueueAdapter, type QueueAdapter } from './queue-adapter.ts';
 import { QueueManager } from './queues.ts';
 import { assembleThenListen, closeHttpServer, createRefreshScheduler, createShutdown } from './runtime.ts';
 
@@ -36,7 +35,7 @@ function createRedisClient(): Redis | Cluster {
 
 const client = createRedisClient();
 const isBullMQ = config.BULL_VERSION === 'BULLMQ';
-const queueManager = new QueueManager<Queue | BullQueue, BullMQAdapter | BullAdapter>({
+const queueManager = new QueueManager<Queue | BullQueue, QueueAdapter>({
   client,
   prefix: config.BULL_PREFIX,
   version: config.BULL_VERSION,
@@ -47,7 +46,12 @@ const queueManager = new QueueManager<Queue | BullQueue, BullMQAdapter | BullAda
       },
       prefix: config.BULL_PREFIX,
     }),
-  createAdapter: (queue) => isBullMQ ? new BullMQAdapter(queue as Queue) : new BullAdapter(queue as BullQueue),
+  createAdapter: (queue) =>
+    createQueueAdapter(
+      queue,
+      config.BULL_VERSION,
+      config.BULL_DELIMITER,
+    ),
   onQueueCloseError: (queueName, error) => console.error(`failed to close queue "${queueName}":`, error),
 });
 
