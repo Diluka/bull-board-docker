@@ -8,6 +8,7 @@ import { prepareExtensions } from './extensions/loader.ts';
 function testConfig(overrides: Record<string, unknown> = {}) {
   return {
     AUTH_ENABLED: false,
+    BULL_DELIMITER: '',
     LOGIN_PAGE: '/login',
     METRICS_ENABLED: false,
     METRICS_VARS: {},
@@ -77,7 +78,12 @@ Deno.test('application imports before refresh, activates serially, creates Bull 
   let boardCreations = 0;
 
   const result = await createApplication(
-    { config: testConfig(), redis: {} as never, queues, serverAdapter },
+    {
+      config: testConfig({ BULL_DELIMITER: '--' }),
+      redis: {} as never,
+      queues,
+      serverAdapter,
+    },
     runtimeOverrides({
       prepareExtensions() {
         const modules = new Map([
@@ -136,7 +142,12 @@ Deno.test('application imports before refresh, activates serially, creates Bull 
   ]);
   assert.equal(boardCreations, 1);
   assert.equal(boardOptions?.queues, initialAdapters);
-  assert.deepEqual(boardOptions?.options, { uiConfig: { miscLinks: [{ text: 'Demo', url: '/proxy/ext/demo/hello' }] } });
+  assert.deepEqual(boardOptions?.options, {
+    uiConfig: {
+      miscLinks: [{ text: 'Demo', url: '/proxy/ext/demo/hello' }],
+      overview: { groupByDelimiter: true },
+    },
+  });
   const miscLinks = (boardOptions?.options as { uiConfig: { miscLinks: unknown[] } }).uiConfig.miscLinks;
   assert.ok(Object.isFrozen(miscLinks));
   assert.equal(await (await request(result.app, '/ext/demo/hello')).text(), 'extension');

@@ -30,6 +30,7 @@ export default {
   REDIS_IS_CLUSTER: process.env.REDIS_IS_CLUSTER,
   BULL_PREFIX: process.env.BULL_PREFIX || 'bull',
   BULL_VERSION: process.env.BULL_VERSION || 'BULLMQ',
+  BULL_DELIMITER: process.env.BULL_DELIMITER || '',
   METRICS_ENABLED: process.env.METRICS_ENABLED === 'true',
   METRICS_VARS: getMetricsVars(),
   PORT: parseInt(process.env.PORT || '3000'),

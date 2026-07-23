@@ -38,6 +38,7 @@ see "Example with docker-compose" section for example with env parameters
 - `REDIS_IS_CLUSTER` - enable Redis Cluster true or false (false by default)
 - `REDIS_PASSWORD` - password to connect to redis (no password by default)
 - `BULL_PREFIX` - prefix to your bull queue name (bull by default)
+- `BULL_DELIMITER` - optional queue name delimiter used by Bull Board to group queues into a tree (disabled by default)
 - `BULL_VERSION` - version of bull lib to use 'BULLMQ' or 'BULL' ('BULLMQ' by default)
 - `PROXY_PATH` - proxyPath for bull board, e.g. `/app/bull-board` [docs] ('' by default)
 - `USER_LOGIN` - login to restrict access to bull-board interface (disabled by default)
