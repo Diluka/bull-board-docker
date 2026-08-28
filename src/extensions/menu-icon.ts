@@ -26,8 +26,16 @@ export function injectExtensionMenuIcon(): RequestHandler {
   return (_req, res, next) => {
     const send = res.send.bind(res) as (body?: unknown) => Response;
     res.send = ((body?: unknown) => {
-      if (typeof body !== 'string' || body.includes(injectionMarker) || !body.includes('</body>')) return send(body);
-      return send(body.replace('</body>', `${extensionMenuIconScript}</body>`));
+      const contentType = res.get('Content-Type');
+      if (
+        typeof body === 'string' &&
+        (!contentType || contentType.startsWith('text/html')) &&
+        !body.includes(injectionMarker) &&
+        body.includes('</body>')
+      ) {
+        return send(body.replace('</body>', `${extensionMenuIconScript}</body>`));
+      }
+      return send(body);
     }) as typeof res.send;
     next();
   };

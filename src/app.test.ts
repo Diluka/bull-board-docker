@@ -155,9 +155,10 @@ Deno.test('application imports before refresh, activates serially, creates Bull 
   assert.equal(await (await request(result.app, '/')).text(), 'board');
 });
 
-Deno.test('application injects an accessible inline icon into the Bull Board extension menu', async () => {
+Deno.test('application injects an accessible inline icon into Bull Board HTML without changing JSON responses', async () => {
   const boardRouter = express.Router();
-  boardRouter.get('/', (_req, res) => res.type('html').send('<!doctype html><html><body><div id="root"></div></body></html>'));
+  boardRouter.get('/', (_req, res) => res.send('<!doctype html><html><body><div id="root"></div></body></html>'));
+  boardRouter.get('/api', (_req, res) => res.json({ failedReason: '<html><body>upstream error</body></html>' }));
   const result = await createApplication(
     {
       config: testConfig(),
@@ -188,6 +189,10 @@ Deno.test('application injects an accessible inline icon into the Bull Board ext
   assert.match(html, /data-bull-board-extension-icon[^>]+viewBox="2 2 20 20"[^>]+fill="currentColor"/);
   assert.doesNotMatch(html, /data-bull-board-extension-icon[^>]+stroke=/);
   assert.match(html, /setAttribute\('aria-label', 'Extensions'\)/);
+
+  assert.deepEqual(await (await request(result.app, '/api')).json(), {
+    failedReason: '<html><body>upstream error</body></html>',
+  });
 });
 
 Deno.test('application does not refresh queues or activate when a later extension import fails', async () => {
