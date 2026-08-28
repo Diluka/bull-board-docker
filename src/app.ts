@@ -16,6 +16,7 @@ import { authRouter as defaultAuthRouter } from './login.ts';
 export interface ApplicationConfig {
   AUTH_ENABLED: boolean;
   BULL_DELIMITER: string;
+  BULL_SHOW_WORKERS: boolean;
   LOGIN_PAGE: string;
   METRICS_ENABLED: boolean;
   METRICS_VARS: Record<string, string>;
@@ -46,6 +47,7 @@ interface BoardOptions {
     uiConfig: {
       miscLinks: readonly IMiscLink[];
       overview: { groupByDelimiter: boolean };
+      showWorkers: boolean;
     };
   };
 }
@@ -104,6 +106,7 @@ export async function createApplication(
           overview: {
             groupByDelimiter: Boolean(options.config.BULL_DELIMITER),
           },
+          showWorkers: options.config.BULL_SHOW_WORKERS,
         },
       },
     });
