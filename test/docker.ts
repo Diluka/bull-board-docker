@@ -7,6 +7,7 @@ try {
   await compose(['build', 'bull-board']);
   await compose([
     'run',
+    '-T',
     '--rm',
     '--no-deps',
     '--entrypoint',
@@ -17,6 +18,7 @@ try {
   ]);
   await compose([
     'run',
+    '-T',
     '--rm',
     '--no-deps',
     '--entrypoint',
@@ -30,15 +32,15 @@ try {
     '/extensions/example-ts/public/app.ts',
   ]);
   await compose(['up', '-d', 'bull-board', 'bull-board-baseline']);
-  await compose(['run', '--rm', '--no-deps', 'acceptance']);
+  await compose(['run', '-T', '--rm', '--no-deps', 'acceptance']);
 
-  const invalid = await compose(['run', '--rm', '--no-deps', 'invalid-extension'], false);
+  const invalid = await compose(['run', '-T', '--rm', '--no-deps', 'invalid-extension'], false);
   assert.notEqual(invalid.code, 0, 'invalid extension startup must exit non-zero');
   assert.match(invalid.output, /Extension at index 0 \(\/extensions\/missing\) failed to resolve/);
   assert.doesNotMatch(invalid.output, /bull-board is started/, 'invalid extension startup must fail before HTTP listening');
   console.log('invalid extension failed before HTTP listening with index and specifier diagnostics');
 
-  const invalidTypeScript = await compose(['run', '--rm', '--no-deps', 'invalid-typescript-extension'], false);
+  const invalidTypeScript = await compose(['run', '-T', '--rm', '--no-deps', 'invalid-typescript-extension'], false);
   assert.notEqual(invalidTypeScript.code, 0, 'preloaded TypeScript compilation failure must exit non-zero');
   assert.match(
     invalidTypeScript.output,
