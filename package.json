@@ -14,8 +14,8 @@
   },
   "repository": "https://github.com/Diluka/bull-board-docker",
   "dependencies": {
-    "@bull-board/api": "^8.1.2",
-    "@bull-board/express": "^8.1.2",
+    "@bull-board/api": "^9.5.0",
+    "@bull-board/express": "^9.5.0",
     "bull": "^4.16.5",
     "bullmq": "^5.80.9",
     "connect-ensure-login": "^0.1.1",
@@ -33,7 +33,7 @@
     "@types/express": "^5.0.6",
     "@types/express-session": "^1.19.0",
     "@types/morgan": "^1.9.10",
-    "@types/node": "^26.1.1",
+    "@types/node": "^26.4.0",
     "@types/passport": "^1.0.17",
     "@types/passport-http": "^0.3.11",
     "@types/passport-local": "^1.0.38"
