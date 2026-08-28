@@ -31,6 +31,7 @@ export default {
   BULL_PREFIX: process.env.BULL_PREFIX || 'bull',
   BULL_VERSION: process.env.BULL_VERSION || 'BULLMQ',
   BULL_DELIMITER: process.env.BULL_DELIMITER || '',
+  BULL_SHOW_WORKERS: process.env.BULL_SHOW_WORKERS === 'true',
   METRICS_ENABLED: process.env.METRICS_ENABLED === 'true',
   METRICS_VARS: getMetricsVars(),
   PORT: parseInt(process.env.PORT || '3000'),

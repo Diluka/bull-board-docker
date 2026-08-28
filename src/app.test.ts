@@ -9,6 +9,7 @@ function testConfig(overrides: Record<string, unknown> = {}) {
   return {
     AUTH_ENABLED: false,
     BULL_DELIMITER: '',
+    BULL_SHOW_WORKERS: false,
     LOGIN_PAGE: '/login',
     METRICS_ENABLED: false,
     METRICS_VARS: {},
@@ -146,6 +147,7 @@ Deno.test('application imports before refresh, activates serially, creates Bull 
     uiConfig: {
       miscLinks: [{ text: 'Demo', url: '/proxy/ext/demo/hello' }],
       overview: { groupByDelimiter: true },
+      showWorkers: false,
     },
   });
   const miscLinks = (boardOptions?.options as { uiConfig: { miscLinks: unknown[] } }).uiConfig.miscLinks;
