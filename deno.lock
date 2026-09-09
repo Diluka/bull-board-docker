@@ -1,31 +1,31 @@
 {
   "version": "5",
   "specifiers": {
-    "npm:@bull-board/api@^9.5.0": "9.5.0_@bull-board+ui@9.5.0__bull@4.16.5__bullmq@5.80.9_bull@4.16.5_bullmq@5.80.9",
-    "npm:@bull-board/express@^9.5.0": "9.5.0_bull@4.16.5_bullmq@5.80.9",
+    "npm:@bull-board/api@^9.8.0": "9.8.0_@bull-board+ui@9.8.0_bull@4.16.5_bullmq@5.81.4",
+    "npm:@bull-board/express@^9.8.0": "9.8.0_bull@4.16.5_bullmq@5.81.4",
     "npm:@types/connect-ensure-login@~0.1.9": "0.1.9",
     "npm:@types/express-session@^1.19.0": "1.19.0",
     "npm:@types/express@^5.0.6": "5.0.6",
     "npm:@types/morgan@^1.9.10": "1.9.10",
-    "npm:@types/node@^26.4.0": "26.4.0",
+    "npm:@types/node@^26.5.0": "26.5.0",
     "npm:@types/passport-http@~0.3.11": "0.3.11",
     "npm:@types/passport-local@^1.0.38": "1.0.38",
     "npm:@types/passport@^1.0.17": "1.0.17",
     "npm:bull@^4.16.5": "4.16.5",
-    "npm:bullmq@^5.80.9": "5.80.9",
+    "npm:bullmq@^5.81.4": "5.81.4",
     "npm:connect-ensure-login@~0.1.1": "0.1.1",
     "npm:dotenv@^17.4.2": "17.4.2",
     "npm:express-session@^1.19.0": "1.19.0",
     "npm:express@^5.2.1": "5.2.1",
     "npm:ioredis@~5.11.1": "5.11.1",
-    "npm:morgan@^1.11.0": "1.11.0",
+    "npm:morgan@^1.12.0": "1.12.0",
     "npm:passport-http@0.3": "0.3.0",
     "npm:passport-local@1": "1.0.0",
     "npm:passport@0.7": "0.7.0"
   },
   "npm": {
-    "@bull-board/api@9.5.0_@bull-board+ui@9.5.0__bull@4.16.5__bullmq@5.80.9_bull@4.16.5_bullmq@5.80.9": {
-      "integrity": "sha512-fmOyOy1lZiLZFyDJjI2osZrpTMO+JSgmGNhDf3MrmOf3oF084o6w0wpGefs0OqEfyUT1F5/1arE5AwmEUuxZ+A==",
+    "@bull-board/api@9.8.0_@bull-board+ui@9.8.0_bull@4.16.5_bullmq@5.81.4": {
+      "integrity": "sha512-+qmJ19pBrOSZCPLbN93IijoPEpx5DZBWkwqUBk/FgQObvSyHB2OJvuwvvi/TaujTCbRH1eiYPc4USp9dTlNEug==",
       "dependencies": [
         "@bull-board/ui",
         "bull",
@@ -36,24 +36,24 @@
         "bull",
         "bullmq"
       ],
-      "tarball": "https://registry.npmmirror.com/@bull-board/api/-/api-9.5.0.tgz"
+      "tarball": "https://registry.npmmirror.com/@bull-board/api/-/api-9.8.0.tgz"
     },
-    "@bull-board/express@9.5.0_bull@4.16.5_bullmq@5.80.9": {
-      "integrity": "sha512-EKeXQzeb1zF9ra0hfYfPArU1JlWKl2vyL4Rb3gQW0XzU7SkEFgYm3727gDrQZdU8dvc5g/FLEqc0dr6UkDUHhg==",
+    "@bull-board/express@9.8.0_bull@4.16.5_bullmq@5.81.4": {
+      "integrity": "sha512-nYywx44PHHq7ybgQZySrDiM9B2Yc1NSywWm+zdjP8UyVGrvgooZ0UsT+F58ZF4wQ2QGqYRCTNb+YbPvBAWWjBg==",
       "dependencies": [
         "@bull-board/api",
         "@bull-board/ui",
         "ejs",
         "express"
       ],
-      "tarball": "https://registry.npmmirror.com/@bull-board/express/-/express-9.5.0.tgz"
+      "tarball": "https://registry.npmmirror.com/@bull-board/express/-/express-9.8.0.tgz"
     },
-    "@bull-board/ui@9.5.0_bull@4.16.5_bullmq@5.80.9": {
-      "integrity": "sha512-qrq0e906M8Ps/mV3bQXmj7EXJWLaFs5mNz+oBoLR/7EShBi5YooROzQ/SEFFedg/L9h6QWDWJ9Ph0AH7NrG9uw==",
+    "@bull-board/ui@9.8.0_bull@4.16.5_bullmq@5.81.4": {
+      "integrity": "sha512-WE6imvISwGDI/E1i7H1M4mQ/NI99sj9u/XIUT5QgbQlWAbys1N4/YdfPktwK6eyKynPMPHJqcAqwRDJDzlceOA==",
       "dependencies": [
         "@bull-board/api"
       ],
-      "tarball": "https://registry.npmmirror.com/@bull-board/ui/-/ui-9.5.0.tgz"
+      "tarball": "https://registry.npmmirror.com/@bull-board/ui/-/ui-9.8.0.tgz"
     },
     "@ioredis/commands@1.10.0": {
       "integrity": "sha512-UmeW7z4LfctwoQ5wkhVzgq8tXkreED2xZGpX+Bg+zA+WJFZCT6c062AfCK/Dfk81xZnnwdhJCUMkitihRaoC2Q==",
@@ -154,12 +154,12 @@
       ],
       "tarball": "https://registry.npmmirror.com/@types/morgan/-/morgan-1.9.10.tgz"
     },
-    "@types/node@26.4.0": {
-      "integrity": "sha512-faiGnoIrLH/V8cibOMEAZ8pMw6oXqSukl29ra4mN8GdaB2ZewzeaLj+INpV5N+Z1eKWzY+IzaIZH2EIR6YZRNQ==",
+    "@types/node@26.5.0": {
+      "integrity": "sha512-dVSGpriSoCgz8WnDNTuSSuSv1PC/ALXihO4ulRZt7Md8k9mlbdin3lGOcDE8SnWOgf513ByWlXd7BK4azmyg/A==",
       "dependencies": [
         "undici-types"
       ],
-      "tarball": "https://registry.npmmirror.com/@types/node/-/node-26.4.0.tgz"
+      "tarball": "https://registry.npmmirror.com/@types/node/-/node-26.5.0.tgz"
     },
     "@types/passport-http@0.3.11": {
       "integrity": "sha512-FO0rDRYtuha9m2ZgRx5+jrgrrkAnUzgzdItFI0dwKBC6k9pArK677Gtan67u6+Qah2nXVP3M1uZ5p90SpBT5Zg==",
@@ -259,17 +259,17 @@
       ],
       "tarball": "https://registry.npmmirror.com/bull/-/bull-4.16.5.tgz"
     },
-    "bullmq@5.80.9": {
-      "integrity": "sha512-CY2HlrcW6eBzBKCcr6RNSqm/n/dh9DmD1yNLN4vA8lCt6wdbqSq7ihkUqywgxBkQYz0dShMs5TdleP4vT/G2Sg==",
+    "bullmq@5.81.4": {
+      "integrity": "sha512-n+WHSzz20KooBGoJyASre6oJNz/p5f1IJRRN2ibD+NWPQaNpNQmDrwYuPO+bsXrQeM1MQzUxXGbdjmyOFKP2xQ==",
       "dependencies": [
         "cron-parser",
         "ioredis",
-        "msgpackr@2.0.4",
+        "msgpackr@2.0.5",
         "node-abort-controller",
         "semver",
         "tslib"
       ],
-      "tarball": "https://registry.npmmirror.com/bullmq/-/bullmq-5.80.9.tgz"
+      "tarball": "https://registry.npmmirror.com/bullmq/-/bullmq-5.81.4.tgz"
     },
     "bytes@3.1.2": {
       "integrity": "sha512-/Nf7TyzTx6S3yRJObOAV7956r8cr2+Oj8AC5dt8wSP3BQAoeX58NoHyCU8P8zGkNXStjTSi6fzO6F0pBdcYbEg==",
@@ -594,8 +594,8 @@
       ],
       "tarball": "https://registry.npmmirror.com/mime-types/-/mime-types-3.0.2.tgz"
     },
-    "morgan@1.11.0": {
-      "integrity": "sha512-zSkVu3t18r39pw4ixfBKvfZi3y2UOqr7d4WYwcj3m8nXpEQK4rPO6GLzs/CExoRgmX3y9EjmmcXqv6jq0SK46g==",
+    "morgan@1.12.0": {
+      "integrity": "sha512-OHpTRQwn2ezasILW8iKe+Yww1XsfWsZIpUOLF7RDb2g5GwO3trPaRwi7+8BDiJ7HFx2Kg2mfUdCBcVhwYlOz2g==",
       "dependencies": [
         "basic-auth",
         "debug@2.6.9",
@@ -603,7 +603,7 @@
         "on-finished",
         "on-headers"
       ],
-      "tarball": "https://registry.npmmirror.com/morgan/-/morgan-1.11.0.tgz"
+      "tarball": "https://registry.npmmirror.com/morgan/-/morgan-1.12.0.tgz"
     },
     "ms@2.0.0": {
       "integrity": "sha512-Tpp60P6IUJDTuOq/5Z8cdskzJujfwqfOTkrwIwj7IRISpnkJnT6SyJ4PCPnGMoFjC9ddhal5KVIYtAt97ix05A==",
@@ -637,12 +637,12 @@
       ],
       "tarball": "https://registry.npmmirror.com/msgpackr/-/msgpackr-1.12.1.tgz"
     },
-    "msgpackr@2.0.4": {
-      "integrity": "sha512-o1C5KRmuRt+apqMr1HuGSqWStZoRBUpEsCsl15uM9VdAF1qHLtvMOU2En747EnTyEl6c4pzPewRMFF31s1CNbA==",
+    "msgpackr@2.0.5": {
+      "integrity": "sha512-cef05H/dSYpLpqp3sj/qyZh5vhUYCalnaLO7j1yOmpsR0y/XwLVtK7r5gn+U/F7CTEfMowcGhlUQJDLcLf7jcA==",
       "optionalDependencies": [
         "msgpackr-extract"
       ],
-      "tarball": "https://registry.npmmirror.com/msgpackr/-/msgpackr-2.0.4.tgz"
+      "tarball": "https://registry.npmmirror.com/msgpackr/-/msgpackr-2.0.5.tgz"
     },
     "negotiator@1.0.0": {
       "integrity": "sha512-8Ofs/AUQh8MaEcrlq5xOX0CQ9ypTF5dl78mjlMNfOK08fzpgTHQRQPBxcPlEtIw0yRpws+Zo/3r+5WRby7u3Gg==",
@@ -904,9 +904,9 @@
       ],
       "tarball": "https://registry.npmmirror.com/uid-safe/-/uid-safe-2.1.5.tgz"
     },
-    "undici-types@8.3.0": {
-      "integrity": "sha512-j375ScV60dom+YkPFIfTLcOiPxkN/buHz5GobjLhixFuANaNs3C9l4GmrWqejgXWJ7BbJcFYpTEUkS1Ge8bpZQ==",
-      "tarball": "https://registry.npmmirror.com/undici-types/-/undici-types-8.3.0.tgz"
+    "undici-types@8.9.0": {
+      "integrity": "sha512-KTDyRTYX8sWmKXAikPHHSyc63CRPETMctyjKFupcC6OBLXT3xsN0e9aF7m+mIXutFWpUXuedtowG7iLOzp0kQg==",
+      "tarball": "https://registry.npmmirror.com/undici-types/-/undici-types-8.9.0.tgz"
     },
     "unpipe@1.0.0": {
       "integrity": "sha512-pjy2bYhSsufwWlKwPc+l3cN7+wuJlK6uz0YdJEOlQDbl6jo/YlPi4mb8agUkVC8BF7V8NuzeyPNqRksA3hztKQ==",
@@ -933,24 +933,24 @@
   "workspace": {
     "packageJson": {
       "dependencies": [
-        "npm:@bull-board/api@^9.5.0",
-        "npm:@bull-board/express@^9.5.0",
+        "npm:@bull-board/api@^9.8.0",
+        "npm:@bull-board/express@^9.8.0",
         "npm:@types/connect-ensure-login@~0.1.9",
         "npm:@types/express-session@^1.19.0",
         "npm:@types/express@^5.0.6",
         "npm:@types/morgan@^1.9.10",
-        "npm:@types/node@^26.4.0",
+        "npm:@types/node@^26.5.0",
         "npm:@types/passport-http@~0.3.11",
         "npm:@types/passport-local@^1.0.38",
         "npm:@types/passport@^1.0.17",
         "npm:bull@^4.16.5",
-        "npm:bullmq@^5.80.9",
+        "npm:bullmq@^5.81.4",
         "npm:connect-ensure-login@~0.1.1",
         "npm:dotenv@^17.4.2",
         "npm:express-session@^1.19.0",
         "npm:express@^5.2.1",
         "npm:ioredis@~5.11.1",
-        "npm:morgan@^1.11.0",
+        "npm:morgan@^1.12.0",
         "npm:passport-http@0.3",
         "npm:passport-local@1",
         "npm:passport@0.7"
