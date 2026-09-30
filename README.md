@@ -2,6 +2,8 @@ Docker image for [bull-board]. Allow you to monitor your bull queue without any 
 
 Supports both: bull and bullmq.
 
+Queues are discovered on startup and every minute. Standalone Redis discovery uses incremental `SCAN` calls with a `COUNT` hint of 500; Redis Cluster retains its existing `KEYS` discovery behavior. The dashboard updates only after successful discovery; a failed refresh keeps the previous queue list. SCAN discovery is eventually consistent: queues added or removed during a scan may appear in the next refresh.
+
 ### Quick start with Docker
 
 ```

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { Cluster } from 'ioredis';
 
 import { QueueManager } from './queues.ts';
 
@@ -14,9 +15,9 @@ function queueHarness(options: { prefix?: string; version?: string } = {}) {
   const created: FakeQueue[] = [];
   const manager = new QueueManager<FakeQueue, string>({
     client: {
-      keys(pattern: string) {
+      scan(_cursor: string, _match: 'MATCH', pattern: string) {
         patterns.push(pattern);
-        return Promise.resolve(keys);
+        return Promise.resolve<[string, string[]]>(['0', keys]);
       },
     },
     prefix: options.prefix ?? 'bull',
@@ -58,6 +59,155 @@ Deno.test('refresh uses the Bull id suffix without losing colons from the prefix
   assert.deepEqual(harness.patterns, ['tenant:bull:*:id']);
 });
 
+Deno.test('Cluster keeps the existing KEYS discovery path and preserves its snapshot on failure', async () => {
+  const client = new Cluster([], { lazyConnect: true });
+  let keys: string[] | Error = ['bull:zeta:meta', 'bull:alpha:meta', 'bull:alpha:meta'];
+  client.keys = (pattern) => {
+    assert.equal(pattern, 'bull:*:meta');
+    return keys instanceof Error ? Promise.reject(keys) : Promise.resolve(keys);
+  };
+  client.scan = () => Promise.reject(new Error('Cluster discovery must keep using KEYS'));
+  const closed: string[] = [];
+  const manager = new QueueManager<FakeQueue, string>({
+    client,
+    prefix: 'bull',
+    version: 'BULLMQ',
+    createQueue: (name) => ({ name, close: () => Promise.resolve().then(() => closed.push(name)).then(() => {}) }),
+    createAdapter: (queue) => `adapter:${queue.name}`,
+  });
+  try {
+    assert.deepEqual(await manager.refresh(), ['adapter:alpha', 'adapter:zeta']);
+    const snapshot = manager.list();
+    keys = new Error('keys failed');
+    await assert.rejects(() => manager.refresh(), /keys failed/);
+    assert.deepEqual(manager.list(), snapshot);
+    assert.deepEqual(closed, []);
+  } finally {
+    await manager.close();
+    client.disconnect();
+  }
+});
+
+function scanClient(pages: Record<string, [string, string[]] | Error>, pattern = 'bull:*:meta') {
+  const cursors: string[] = [];
+  return {
+    cursors,
+    scan(cursor: string, match: 'MATCH', actualPattern: string, count: 'COUNT', size: number): Promise<[string, string[]]> {
+      assert.deepEqual([match, actualPattern, count, size], ['MATCH', pattern, 'COUNT', 500]);
+      cursors.push(cursor);
+      const page = pages[cursor];
+      assert.ok(page, `unexpected cursor ${cursor}`);
+      return page instanceof Error ? Promise.reject(page) : Promise.resolve(page);
+    },
+  };
+}
+
+Deno.test('refresh scans all pages through empty results and deduplicates before creating sorted queues', async () => {
+  for (const version of ['BULLMQ', 'BULL']) {
+    const suffix = version === 'BULLMQ' ? 'meta' : 'id';
+    const client = scanClient({
+      '0': ['42', [`tenant:bull:zeta:${suffix}`]],
+      '42': ['9007199254740993', []],
+      '9007199254740993': ['0', [
+        `tenant:bull:alpha:${suffix}`,
+        `tenant:bull:zeta:${suffix}`,
+        `other:bull:wrong:${suffix}`,
+        'tenant:bull:wrong:jobs',
+      ]],
+    }, `tenant:bull:*:${suffix}`);
+    const created: string[] = [];
+    const manager = new QueueManager<FakeQueue, string>({
+      client,
+      prefix: 'tenant:bull',
+      version,
+      createQueue(name) {
+        created.push(name);
+        return { name, close: () => Promise.resolve() };
+      },
+      createAdapter: (queue) => `adapter:${queue.name}`,
+    });
+
+    assert.deepEqual(await manager.refresh(), ['adapter:alpha', 'adapter:zeta']);
+    assert.deepEqual(created, ['alpha', 'zeta']);
+    assert.deepEqual(client.cursors, ['0', '42', '9007199254740993']);
+    await manager.close();
+  }
+});
+
+Deno.test('a failed scan page preserves existing queues and retries from cursor zero', async () => {
+  const pages: Record<string, [string, string[]] | Error> = { '0': ['0', ['bull:old:meta']] };
+  const client = scanClient(pages);
+  const created: string[] = [];
+  const closed: string[] = [];
+  const manager = new QueueManager<FakeQueue, string>({
+    client,
+    prefix: 'bull',
+    version: 'BULLMQ',
+    createQueue(name) {
+      created.push(name);
+      return { name, close: () => Promise.resolve().then(() => closed.push(name)).then(() => {}) };
+    },
+    createAdapter: (queue) => `adapter:${queue.name}`,
+  });
+  await manager.refresh();
+  const old = manager.get('old');
+  pages['0'] = ['8', ['bull:new:meta']];
+  pages['8'] = new Error('scan failed');
+
+  await assert.rejects(() => manager.refresh(), /scan failed/);
+  assert.deepEqual(manager.list(), [old]);
+  assert.deepEqual(created, ['old']);
+  assert.deepEqual(closed, []);
+
+  pages['8'] = ['0', ['bull:old:meta']];
+  assert.deepEqual(await manager.refresh(), ['adapter:new', 'adapter:old']);
+  assert.equal(manager.get('old'), old);
+  assert.deepEqual(client.cursors, ['0', '0', '8', '0', '8']);
+  await manager.close();
+});
+
+Deno.test('close and concurrent refresh wait for the final scan page before replacing and releasing queues', async () => {
+  let release!: (page: [string, string[]]) => void;
+  const blockedPage = new Promise<[string, string[]]>((resolve) => release = resolve);
+  let scanning = false;
+  const cursors: string[] = [];
+  const closed: string[] = [];
+  const manager = new QueueManager<FakeQueue, string>({
+    client: {
+      scan(cursor) {
+        cursors.push(cursor);
+        if (!scanning) return Promise.resolve<[string, string[]]>(['0', ['bull:old:meta']]);
+        return cursor === '0' ? Promise.resolve<[string, string[]]>(['4', ['bull:new:meta']]) : blockedPage;
+      },
+    },
+    prefix: 'bull',
+    version: 'BULLMQ',
+    createQueue: (name) => ({ name, close: () => Promise.resolve().then(() => closed.push(name)).then(() => {}) }),
+    createAdapter: (queue) => `adapter:${queue.name}`,
+  });
+  await manager.refresh();
+  const old = manager.get('old');
+  scanning = true;
+  const refresh = manager.refresh();
+  await Promise.resolve();
+  assert.equal(manager.refresh(), refresh);
+  const closing = manager.close();
+  let finishedClosing = false;
+  void closing.then(() => finishedClosing = true);
+  await Promise.resolve();
+  assert.deepEqual(manager.list(), [old]);
+  assert.deepEqual(closed, []);
+  assert.equal(finishedClosing, false);
+  await assert.rejects(() => manager.refresh(), /QueueManager is closed/);
+
+  release(['0', ['bull:last:meta']]);
+  assert.deepEqual(await refresh, ['adapter:last', 'adapter:new']);
+  await closing;
+  assert.deepEqual(cursors, ['0', '0', '4']);
+  assert.deepEqual(closed, ['old', 'last', 'new']);
+  assert.deepEqual(manager.list(), []);
+});
+
 Deno.test('refresh adds and removes queues while list and get stay live', async () => {
   const harness = queueHarness();
   harness.setKeys(['bull:one:meta', 'bull:two:meta']);
@@ -80,13 +230,13 @@ Deno.test('refresh adds and removes queues while list and get stay live', async 
 
 Deno.test('concurrent refresh callers share one scan and one adapter result', async () => {
   let scans = 0;
-  let release!: (keys: string[]) => void;
-  const blockedKeys = new Promise<string[]>((resolve) => release = resolve);
+  let release!: (page: [string, string[]]) => void;
+  const blockedPage = new Promise<[string, string[]]>((resolve) => release = resolve);
   const manager = new QueueManager<FakeQueue, string>({
     client: {
-      keys() {
+      scan() {
         scans++;
-        return blockedKeys;
+        return blockedPage;
       },
     },
     prefix: 'bull',
@@ -99,7 +249,7 @@ Deno.test('concurrent refresh callers share one scan and one adapter result', as
   const second = manager.refresh();
   assert.equal(first, second);
   assert.equal(scans, 1);
-  release(['bull:one:meta']);
+  release(['0', ['bull:one:meta']]);
 
   assert.equal(await first, await second);
   assert.deepEqual(await first, ['adapter:one']);
@@ -108,7 +258,7 @@ Deno.test('concurrent refresh callers share one scan and one adapter result', as
 Deno.test('close waits for every queue, continues after failures, and is idempotent', async () => {
   const events: string[] = [];
   const manager = new QueueManager<FakeQueue, string>({
-    client: { keys: () => Promise.resolve(['bull:a:meta', 'bull:b:meta']) },
+    client: { scan: () => Promise.resolve<[string, string[]]>(['0', ['bull:a:meta', 'bull:b:meta']]) },
     prefix: 'bull',
     version: 'BULLMQ',
     createQueue: (name) => ({
@@ -136,7 +286,7 @@ Deno.test('refresh publishes a complete replacement while failed removed queues 
   const closeAttempts = new Map<string, number>();
   const closeErrors: [string, unknown][] = [];
   const options = {
-    client: { keys: () => Promise.resolve(keys) },
+    client: { scan: () => Promise.resolve<[string, string[]]>(['0', keys]) },
     prefix: 'bull',
     version: 'BULLMQ',
     createQueue: (name: string): FakeQueue => ({
@@ -170,7 +320,7 @@ Deno.test('create failure preserves the published snapshot and closes every queu
   let keys = ['bull:a:meta'];
   const closed: string[] = [];
   const manager = new QueueManager<FakeQueue, string>({
-    client: { keys: () => Promise.resolve(keys) },
+    client: { scan: () => Promise.resolve<[string, string[]]>(['0', keys]) },
     prefix: 'bull',
     version: 'BULLMQ',
     createQueue(name) {
@@ -196,7 +346,7 @@ Deno.test('adapter failure preserves the snapshot and aggregates cleanup failure
   let failAdapter = false;
   let bCloseAttempts = 0;
   const manager = new QueueManager<FakeQueue, string>({
-    client: { keys: () => Promise.resolve(keys) },
+    client: { scan: () => Promise.resolve<[string, string[]]>(['0', keys]) },
     prefix: 'bull',
     version: 'BULLMQ',
     createQueue: (name) => ({

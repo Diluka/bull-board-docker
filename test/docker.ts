@@ -33,6 +33,7 @@ try {
   ]);
   await compose(['up', '-d', 'bull-board', 'bull-board-baseline']);
   await compose(['run', '-T', '--rm', '--no-deps', 'acceptance']);
+  await compose(['run', '-T', '--rm', 'redis-discovery']);
 
   const invalid = await compose(['run', '-T', '--rm', '--no-deps', 'invalid-extension'], false);
   assert.notEqual(invalid.code, 0, 'invalid extension startup must exit non-zero');

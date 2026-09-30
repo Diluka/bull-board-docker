@@ -1,5 +1,7 @@
+import { Cluster } from 'ioredis';
+
 interface RedisKeyClient {
-  keys(pattern: string): Promise<string[]>;
+  scan(cursor: string, match: 'MATCH', pattern: string, count: 'COUNT', size: number): Promise<[string, string[]]>;
 }
 
 interface ManagedQueue {
@@ -64,16 +66,7 @@ export class QueueManager<QueueType extends ManagedQueue, AdapterType> {
   }
 
   async #runRefresh(): Promise<readonly AdapterType[]> {
-    const keys = await this.#client.keys(`${this.#prefix}:*:${this.#suffix}`);
-    const start = `${this.#prefix}:`;
-    const end = `:${this.#suffix}`;
-    const queueNames = Array.from(
-      new Set(
-        keys
-          .filter((key) => key.startsWith(start) && key.endsWith(end))
-          .map((key) => key.slice(start.length, -end.length)),
-      ),
-    ).sort();
+    const queueNames = await this.#discoverQueueNames();
 
     const nextQueues = new Map<string, QueueType>();
     const createdQueues: QueueType[] = [];
@@ -99,6 +92,23 @@ export class QueueManager<QueueType extends ManagedQueue, AdapterType> {
     this.#queues = nextQueues;
     await this.#drainPendingClose();
     return adapters;
+  }
+
+  async #discoverQueueNames(): Promise<string[]> {
+    const start = `${this.#prefix}:`;
+    const end = `:${this.#suffix}`;
+    const queueNames = new Set<string>();
+    let cursor = '0';
+    do {
+      const [nextCursor, keys]: [string, string[]] = this.#client instanceof Cluster
+        ? ['0', await this.#client.keys(`${start}*${end}`)]
+        : await this.#client.scan(cursor, 'MATCH', `${start}*${end}`, 'COUNT', 500);
+      for (const key of keys) {
+        if (key.startsWith(start) && key.endsWith(end)) queueNames.add(key.slice(start.length, -end.length));
+      }
+      cursor = nextCursor;
+    } while (cursor !== '0');
+    return Array.from(queueNames).sort();
   }
 
   async #cleanupFailedSnapshot(createdQueues: readonly QueueType[], cause: unknown): Promise<never> {

@@ -10,6 +10,22 @@ services:
       timeout: 3s
       retries: 30
 
+  redis-discovery:
+    image: bull-board-docker:test
+    entrypoint:
+      - deno
+      - run
+      - -A
+      - --frozen
+      - --node-modules-dir=none
+      - --config=/usr/app/deno.json
+      - /usr/app/test/redis-discovery.ts
+    volumes:
+      - ./test/redis-discovery.ts:/usr/app/test/redis-discovery.ts:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+
   queue-fixture:
     image: bull-board-docker:test
     entrypoint:
