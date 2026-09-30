@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { Cluster } from 'ioredis';
 
 import { QueueManager } from './queues.ts';
 
@@ -56,6 +57,35 @@ Deno.test('refresh uses the Bull id suffix without losing colons from the prefix
 
   assert.deepEqual(harness.manager.list().map((queue) => queue.name), ['first', 'second']);
   assert.deepEqual(harness.patterns, ['tenant:bull:*:id']);
+});
+
+Deno.test('Cluster keeps the existing KEYS discovery path and preserves its snapshot on failure', async () => {
+  const client = new Cluster([], { lazyConnect: true });
+  let keys: string[] | Error = ['bull:zeta:meta', 'bull:alpha:meta', 'bull:alpha:meta'];
+  client.keys = (pattern) => {
+    assert.equal(pattern, 'bull:*:meta');
+    return keys instanceof Error ? Promise.reject(keys) : Promise.resolve(keys);
+  };
+  client.scan = () => Promise.reject(new Error('Cluster discovery must keep using KEYS'));
+  const closed: string[] = [];
+  const manager = new QueueManager<FakeQueue, string>({
+    client,
+    prefix: 'bull',
+    version: 'BULLMQ',
+    createQueue: (name) => ({ name, close: () => Promise.resolve().then(() => closed.push(name)).then(() => {}) }),
+    createAdapter: (queue) => `adapter:${queue.name}`,
+  });
+  try {
+    assert.deepEqual(await manager.refresh(), ['adapter:alpha', 'adapter:zeta']);
+    const snapshot = manager.list();
+    keys = new Error('keys failed');
+    await assert.rejects(() => manager.refresh(), /keys failed/);
+    assert.deepEqual(manager.list(), snapshot);
+    assert.deepEqual(closed, []);
+  } finally {
+    await manager.close();
+    client.disconnect();
+  }
 });
 
 function scanClient(pages: Record<string, [string, string[]] | Error>, pattern = 'bull:*:meta') {
@@ -176,67 +206,6 @@ Deno.test('close and concurrent refresh wait for the final scan page before repl
   assert.deepEqual(cursors, ['0', '0', '4']);
   assert.deepEqual(closed, ['old', 'last', 'new']);
   assert.deepEqual(manager.list(), []);
-});
-
-Deno.test('Cluster discovery waits for readiness and fully scans every master with independent cursors', async () => {
-  const first = scanClient({ '0': ['7', ['bull:zeta:meta']], '7': ['0', ['bull:shared:meta']] });
-  const second = scanClient({ '0': ['3', []], '3': ['0', ['bull:alpha:meta', 'bull:shared:meta']] });
-  let ready = false;
-  const created: string[] = [];
-  const manager = new QueueManager<FakeQueue, string>({
-    client: {
-      ping() {
-        return Promise.resolve().then(() => {
-          ready = true;
-          return 'PONG';
-        });
-      },
-      nodes(role) {
-        assert.equal(role, 'master');
-        assert.equal(ready, true);
-        return [first, second];
-      },
-    },
-    prefix: 'bull',
-    version: 'BULLMQ',
-    createQueue(name) {
-      created.push(name);
-      return { name, close: () => Promise.resolve() };
-    },
-    createAdapter: (queue) => `adapter:${queue.name}`,
-  });
-
-  assert.deepEqual(await manager.refresh(), ['adapter:alpha', 'adapter:shared', 'adapter:zeta']);
-  assert.deepEqual(created, ['alpha', 'shared', 'zeta']);
-  assert.deepEqual(first.cursors, ['0', '7']);
-  assert.deepEqual(second.cursors, ['0', '3']);
-  await manager.close();
-});
-
-Deno.test('Cluster discovery preserves its snapshot when a master fails or no masters are available', async () => {
-  const pages: Record<string, [string, string[]] | Error> = { '0': ['0', ['bull:old:meta']] };
-  let masters = [scanClient(pages)];
-  const closed: string[] = [];
-  const manager = new QueueManager<FakeQueue, string>({
-    client: { ping: () => Promise.resolve('PONG'), nodes: () => masters },
-    prefix: 'bull',
-    version: 'BULLMQ',
-    createQueue: (name) => ({ name, close: () => Promise.resolve().then(() => closed.push(name)).then(() => {}) }),
-    createAdapter: (queue) => `adapter:${queue.name}`,
-  });
-  await manager.refresh();
-  const old = manager.get('old');
-  pages['0'] = ['0', ['bull:new:meta']];
-  masters.push(scanClient({ '0': new Error('master unavailable') }));
-  await assert.rejects(() => manager.refresh(), /master unavailable/);
-  assert.deepEqual(manager.list(), [old]);
-  assert.deepEqual(closed, []);
-
-  masters = [];
-  await assert.rejects(() => manager.refresh(), /No Redis Cluster masters/);
-  assert.deepEqual(manager.list(), [old]);
-  assert.deepEqual(closed, []);
-  await manager.close();
 });
 
 Deno.test('refresh adds and removes queues while list and get stay live', async () => {

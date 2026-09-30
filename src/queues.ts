@@ -1,10 +1,7 @@
-interface RedisScanClient {
-  scan(cursor: string, match: 'MATCH', pattern: string, count: 'COUNT', size: number): Promise<[string, string[]]>;
-}
+import { Cluster } from 'ioredis';
 
-interface RedisClusterClient {
-  ping(): Promise<string>;
-  nodes(role: 'master'): RedisScanClient[];
+interface RedisKeyClient {
+  scan(cursor: string, match: 'MATCH', pattern: string, count: 'COUNT', size: number): Promise<[string, string[]]>;
 }
 
 interface ManagedQueue {
@@ -13,7 +10,7 @@ interface ManagedQueue {
 }
 
 export interface QueueManagerOptions<QueueType extends ManagedQueue, AdapterType> {
-  client: RedisScanClient | RedisClusterClient;
+  client: RedisKeyClient;
   prefix: string;
   version: string;
   createQueue(name: string): QueueType;
@@ -22,7 +19,7 @@ export interface QueueManagerOptions<QueueType extends ManagedQueue, AdapterType
 }
 
 export class QueueManager<QueueType extends ManagedQueue, AdapterType> {
-  readonly #client: RedisScanClient | RedisClusterClient;
+  readonly #client: RedisKeyClient;
   readonly #prefix: string;
   readonly #suffix: string;
   readonly #createQueue: (name: string) => QueueType;
@@ -98,28 +95,19 @@ export class QueueManager<QueueType extends ManagedQueue, AdapterType> {
   }
 
   async #discoverQueueNames(): Promise<string[]> {
-    let clients: RedisScanClient[];
-    if ('nodes' in this.#client) {
-      await this.#client.ping();
-      clients = this.#client.nodes('master');
-      if (clients.length === 0) throw new Error('No Redis Cluster masters available for queue discovery');
-    } else {
-      clients = [this.#client];
-    }
-
     const start = `${this.#prefix}:`;
     const end = `:${this.#suffix}`;
     const queueNames = new Set<string>();
-    for (const client of clients) {
-      let cursor = '0';
-      do {
-        const [nextCursor, keys] = await client.scan(cursor, 'MATCH', `${start}*${end}`, 'COUNT', 500);
-        for (const key of keys) {
-          if (key.startsWith(start) && key.endsWith(end)) queueNames.add(key.slice(start.length, -end.length));
-        }
-        cursor = nextCursor;
-      } while (cursor !== '0');
-    }
+    let cursor = '0';
+    do {
+      const [nextCursor, keys]: [string, string[]] = this.#client instanceof Cluster
+        ? ['0', await this.#client.keys(`${start}*${end}`)]
+        : await this.#client.scan(cursor, 'MATCH', `${start}*${end}`, 'COUNT', 500);
+      for (const key of keys) {
+        if (key.startsWith(start) && key.endsWith(end)) queueNames.add(key.slice(start.length, -end.length));
+      }
+      cursor = nextCursor;
+    } while (cursor !== '0');
     return Array.from(queueNames).sort();
   }
 
