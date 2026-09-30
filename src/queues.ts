@@ -1,5 +1,10 @@
-interface RedisKeyClient {
-  keys(pattern: string): Promise<string[]>;
+interface RedisScanClient {
+  scan(cursor: string, match: 'MATCH', pattern: string, count: 'COUNT', size: number): Promise<[string, string[]]>;
+}
+
+interface RedisClusterClient {
+  ping(): Promise<string>;
+  nodes(role: 'master'): RedisScanClient[];
 }
 
 interface ManagedQueue {
@@ -8,7 +13,7 @@ interface ManagedQueue {
 }
 
 export interface QueueManagerOptions<QueueType extends ManagedQueue, AdapterType> {
-  client: RedisKeyClient;
+  client: RedisScanClient | RedisClusterClient;
   prefix: string;
   version: string;
   createQueue(name: string): QueueType;
@@ -17,7 +22,7 @@ export interface QueueManagerOptions<QueueType extends ManagedQueue, AdapterType
 }
 
 export class QueueManager<QueueType extends ManagedQueue, AdapterType> {
-  readonly #client: RedisKeyClient;
+  readonly #client: RedisScanClient | RedisClusterClient;
   readonly #prefix: string;
   readonly #suffix: string;
   readonly #createQueue: (name: string) => QueueType;
@@ -64,16 +69,7 @@ export class QueueManager<QueueType extends ManagedQueue, AdapterType> {
   }
 
   async #runRefresh(): Promise<readonly AdapterType[]> {
-    const keys = await this.#client.keys(`${this.#prefix}:*:${this.#suffix}`);
-    const start = `${this.#prefix}:`;
-    const end = `:${this.#suffix}`;
-    const queueNames = Array.from(
-      new Set(
-        keys
-          .filter((key) => key.startsWith(start) && key.endsWith(end))
-          .map((key) => key.slice(start.length, -end.length)),
-      ),
-    ).sort();
+    const queueNames = await this.#discoverQueueNames();
 
     const nextQueues = new Map<string, QueueType>();
     const createdQueues: QueueType[] = [];
@@ -99,6 +95,32 @@ export class QueueManager<QueueType extends ManagedQueue, AdapterType> {
     this.#queues = nextQueues;
     await this.#drainPendingClose();
     return adapters;
+  }
+
+  async #discoverQueueNames(): Promise<string[]> {
+    let clients: RedisScanClient[];
+    if ('nodes' in this.#client) {
+      await this.#client.ping();
+      clients = this.#client.nodes('master');
+      if (clients.length === 0) throw new Error('No Redis Cluster masters available for queue discovery');
+    } else {
+      clients = [this.#client];
+    }
+
+    const start = `${this.#prefix}:`;
+    const end = `:${this.#suffix}`;
+    const queueNames = new Set<string>();
+    for (const client of clients) {
+      let cursor = '0';
+      do {
+        const [nextCursor, keys] = await client.scan(cursor, 'MATCH', `${start}*${end}`, 'COUNT', 500);
+        for (const key of keys) {
+          if (key.startsWith(start) && key.endsWith(end)) queueNames.add(key.slice(start.length, -end.length));
+        }
+        cursor = nextCursor;
+      } while (cursor !== '0');
+    }
+    return Array.from(queueNames).sort();
   }
 
   async #cleanupFailedSnapshot(createdQueues: readonly QueueType[], cause: unknown): Promise<never> {
